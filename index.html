@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>Nagelstudio</title>
+<meta name="description" content="Nageldesigns zeichnen, sammeln und anprobieren.">
+<meta name="theme-color" content="#1A1418">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nagelstudio">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ============ Galerie ============ -->
+<section class="view view-gallery" id="viewGallery">
+  <header class="bar">
+    <h1 class="logo">Nagelstudio</h1>
+    <div class="bar-actions">
+      <button class="btn ghost" id="btnImport" type="button">Empfangen</button>
+      <button class="btn ghost" id="btnShareAll" type="button">Sichern</button>
+      <button class="btn primary" id="btnNew" type="button">Neuer Entwurf</button>
+    </div>
+  </header>
+
+  <div class="gallery-scroll">
+    <div class="gallery-grid" id="galleryGrid"></div>
+
+    <div class="empty-state" id="emptyGallery" hidden>
+      <div class="empty-art" id="emptyArt"></div>
+      <h2>Noch keine Entwürfe</h2>
+      <p>Tippe auf „Neuer Entwurf“, wähle eine Nagelform und leg los. Mit dem Apple&nbsp;Pencil zeichnest du mit Druckstärke wie auf Papier.</p>
+    </div>
+
+    <p class="storage-line" id="storageInfo"></p>
+  </div>
+</section>
+
+<!-- ============ Editor ============ -->
+<section class="view view-editor" id="viewEditor" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="btnBack" type="button" aria-label="Zurück zur Übersicht">‹</button>
+    <input class="name-field" id="designName" type="text" placeholder="Name des Entwurfs" maxlength="40" aria-label="Name des Entwurfs">
+    <div class="bar-actions">
+      <button class="icon-btn" id="btnUndo" type="button" aria-label="Rückgängig" disabled>↺</button>
+      <button class="icon-btn" id="btnRedo" type="button" aria-label="Wiederholen" disabled>↻</button>
+    </div>
+  </header>
+
+  <div class="editor-body">
+    <!-- Werkzeuge -->
+    <nav class="tools" id="tools" aria-label="Werkzeuge">
+      <button class="tool is-active" data-tool="brush" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19c2.5 0 4-1.5 4-3.5S7.5 12 6 12c2-3 6-8 9.5-9.5C18 1.4 20 3 19.5 5.5 18.5 9.5 12 14 9 15"/></svg>
+        <span>Pinsel</span>
+      </button>
+      <button class="tool" data-tool="liner" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21c4-1 7-3 10-7 2.6-3.5 5-8 8-12"/></svg>
+        <span>Liner</span>
+      </button>
+      <button class="tool" data-tool="glitter" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><circle cx="18.5" cy="17.5" r="1.4"/><circle cx="6" cy="18" r="1"/></svg>
+        <span>Glitzer</span>
+      </button>
+      <button class="tool" data-tool="eraser" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 20h11M4.5 15.5l7-7a2 2 0 013 0l4 4a2 2 0 010 3L14 20H8z"/></svg>
+        <span>Radierer</span>
+      </button>
+      <div class="tool-sep"></div>
+      <button class="tool" id="btnFill" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l7-7 7 7-7 7z"/><path d="M19 15c1.5 2 2 3 2 4a2 2 0 11-4 0c0-1 .5-2 2-4z"/></svg>
+        <span>Füllen</span>
+      </button>
+      <button class="tool" id="btnClearLayer" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12M9 7V5h6v2M8 7l1 13h6l1-13"/></svg>
+        <span>Leeren</span>
+      </button>
+    </nav>
+
+    <!-- Zeichenfläche -->
+    <div class="canvas-wrap">
+      <canvas id="canvas"></canvas>
+      <div class="zoom-controls">
+        <button class="icon-btn small" id="btnZoomOut" type="button" aria-label="Verkleinern">−</button>
+        <button class="icon-btn small" id="btnZoomReset" type="button" aria-label="Ansicht zurücksetzen">⤢</button>
+        <button class="icon-btn small" id="btnZoomIn" type="button" aria-label="Vergrößern">＋</button>
+      </div>
+      <p class="pencil-hint" id="pencilHint">Mit dem Pencil zeichnen · mit dem Finger schieben</p>
+    </div>
+
+    <!-- Panel -->
+    <aside class="panel" id="panel">
+      <div class="tabs" role="tablist">
+        <button class="tab is-active" data-tab="color" role="tab" aria-selected="true" aria-controls="panelColor" type="button">Farbe</button>
+        <button class="tab" data-tab="layers" role="tab" aria-selected="false" aria-controls="panelLayers" type="button">Ebenen</button>
+        <button class="tab" data-tab="shape" role="tab" aria-selected="false" aria-controls="panelShape" type="button">Form</button>
+      </div>
+
+      <div class="tab-panel is-active" id="panelColor">
+        <div class="swatches" id="palette"></div>
+        <div class="field-row">
+          <label for="colorPicker">Eigene Farbe</label>
+          <input type="color" id="colorPicker" value="#D8456B">
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="sizeRange">Größe</label><output id="sizeOut">26</output></div>
+          <input type="range" id="sizeRange" min="2" max="120" step="1" value="26">
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="opacityRange">Deckkraft</label><output id="opacityOut">100%</output></div>
+          <input type="range" id="opacityRange" min="5" max="100" step="1" value="100">
+        </div>
+        <label class="check"><input type="checkbox" id="pressureToggle" checked> Druckstärke vom Pencil nutzen</label>
+      </div>
+
+      <div class="tab-panel" id="panelLayers">
+        <div class="layer-list" id="layerList"></div>
+        <button class="btn ghost full" id="btnAddLayer" type="button">Ebene hinzufügen</button>
+        <p class="hint">Grundfarbe unten, Verzierungen darüber. Ebenen lassen sich einzeln ausblenden — praktisch, um Varianten zu vergleichen.</p>
+      </div>
+
+      <div class="tab-panel" id="panelShape">
+        <div class="shape-list" id="shapeList"></div>
+        <p class="hint">Die Form beschneidet das Design nur — deine Zeichnung bleibt erhalten, wenn du die Form wechselst.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<input type="file" id="fileImport" accept="application/json,.json" hidden>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h2 id="modalTitle"></h2>
+    <p id="modalText"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="modalCancel" type="button">Abbrechen</button>
+      <button class="btn danger" id="modalOk" type="button">Löschen</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

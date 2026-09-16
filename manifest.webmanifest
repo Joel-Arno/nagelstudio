@@ -1,0 +1,16 @@
+{
+  "name": "Nagelstudio",
+  "short_name": "Nagelstudio",
+  "description": "Nageldesigns zeichnen, sammeln und anprobieren.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#171216",
+  "theme_color": "#171216",
+  "icons": [
+    { "src": "icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
