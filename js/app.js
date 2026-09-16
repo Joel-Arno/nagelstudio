@@ -8,8 +8,10 @@ import { TryOn } from './tryon.js';
 import {
   emptyDesign, putDesign, getDesign, listDesigns, deleteDesign, purgeDeleted,
   canvasToImage, imageToUrl, releaseUrl, loadImage,
-  exportDesigns, mergeDesigns, shareFile, shareBlob, storageEstimate
+  exportDesigns, mergeDesigns, shareFile, shareBlob, storageEstimate,
+  FINGER_KEYS, FINGER_NAMES, NATURAL
 } from './store.js';
+import { designTexture, setThumbnail, forgetTextures, SET_LAYOUT } from './compose.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -22,7 +24,8 @@ const PALETTE = [
 const RECENT_KEY = 'nagelstudio.farben';
 
 let editor = null;
-let current = null;          // aktuell offener Entwurf
+let current = null;          // offener Entwurf (Satz aus fuenf Naegeln)
+let currentFinger = 'mittelfinger';
 let saveTimer = null;
 let dirty = false;
 let recent = loadRecent();
@@ -54,7 +57,7 @@ async function renderGallery(){
     preview.setAttribute('aria-label', 'Entwurf ' + (d.name || 'ohne Namen') + ' öffnen');
     const img = document.createElement('img');
     img.alt = '';
-    img.src = d.thumb ? imageToUrl(d.thumb) : placeholderThumb(d.shape);
+    img.src = d.thumb ? imageToUrl(d.thumb) : placeholderThumb('mandel');
     preview.appendChild(img);
     preview.addEventListener('click', () => openDesign(d.id));
 
@@ -65,7 +68,9 @@ async function renderGallery(){
     name.textContent = d.name || 'Ohne Namen';
     const date = document.createElement('span');
     date.className = 'card-date';
-    date.textContent = shapeById(d.shape).name + ' · ' + formatDate(d.updatedAt);
+    const formen = [...new Set(FINGER_KEYS.map(k => (d.nails[k] || {}).shape).filter(Boolean))];
+    date.textContent = (formen.length === 1 ? shapeById(formen[0]).name : formen.length + ' Formen')
+                     + ' · ' + formatDate(d.updatedAt);
     meta.append(name, date);
 
     const actions = document.createElement('div');
@@ -110,7 +115,7 @@ async function showStorage(){
 function ensureEditor(){
   if(editor) return editor;
   editor = new NailEditor($('canvas'));
-  editor.onChange = () => { dirty = true; scheduleSave(); refreshLayerList(); };
+  editor.onChange = () => { dirty = true; scheduleSave(); refreshLayerList(); syncBaseColor(); };
   editor.onHistory = () => {
     $('btnUndo').disabled = !editor.canUndo();
     $('btnRedo').disabled = !editor.canRedo();
@@ -121,54 +126,125 @@ function ensureEditor(){
 async function openDesign(id){
   const design = await getDesign(id);
   if(!design) return;
+  current = design;
+  $('designName').value = design.name || '';
+  await showSet();
+}
+
+/** Uebersicht des Satzes: fuenf Naegel zum Antippen. */
+async function showSet(){
+  showView('set');
+  await renderSet();
+}
+
+async function renderSet(){
+  if(!current) return;
+  const box = $('nailSet');
+  box.innerHTML = '';
+  const stage = $('nailSet').parentElement.getBoundingClientRect();
+  const proBreite = Math.floor((Math.min(stage.width, 760) - 70) / 5);
+  const proHoehe = Math.floor((stage.height - 150) * IMG_W / IMG_H);
+  const nailW = Math.max(46, Math.min(150, proBreite, proHoehe || proBreite));
+
+  for(const { key, scale, tilt } of SET_LAYOUT){
+    const nail = current.nails[key];
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'nail-card' + (isNailEmpty(nail) ? ' is-empty' : '');
+    card.setAttribute('aria-label', FINGER_NAMES[key] + ' bemalen');
+
+    const w = Math.round(nailW * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = Math.round(w * IMG_H / IMG_W);
+    const tex = await designTexture(current, key);
+    canvas.getContext('2d').drawImage(tex, 0, 0, canvas.width, canvas.height);
+
+    canvas.style.transform = 'rotate(' + tilt.toFixed(3) + 'rad)';
+
+    const label = document.createElement('span');
+    label.textContent = FINGER_NAMES[key];
+
+    card.append(canvas, label);
+    card.addEventListener('click', () => openNail(key));
+    box.appendChild(card);
+  }
+}
+
+function isNailEmpty(nail){
+  return !nail || !(nail.layers || []).length;
+}
+
+/** Einen Nagel des Satzes im Editor oeffnen. */
+async function openNail(fingerKey){
   const ed = ensureEditor();
+  currentFinger = fingerKey;
+  const nail = current.nails[fingerKey];
 
   const urls = [];
   const images = [];
-  for(const l of design.layers || []){
+  for(const l of nail.layers || []){
     const url = imageToUrl(l.image);
     urls.push(url);
     try{ images.push(url ? await loadImage(url) : null); }
     catch(e){ images.push(null); }
   }
 
-  current = design;
-  ed.loadDesign(design, images);
+  ed.loadDesign(nail, images);
   urls.forEach(releaseUrl);
 
-  $('designName').value = design.name || '';
   showView('editor');
+  renderFingerSwitch();
   syncShapeList();
   refreshLayerList();
+  syncBaseColor();
   ed.onHistory();
   dirty = false;
   requestAnimationFrame(() => ed.render());
   fadeHint();
 }
 
+function renderFingerSwitch(){
+  const box = $('fingerSwitch');
+  box.innerHTML = '';
+  FINGER_KEYS.forEach(key => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'finger-tab' + (key === currentFinger ? ' is-active' : '');
+    b.textContent = FINGER_NAMES[key];
+    b.addEventListener('click', async () => {
+      if(key === currentFinger) return;
+      await stashNail();
+      await openNail(key);
+    });
+    box.appendChild(b);
+  });
+}
+
+function syncBaseColor(){
+  const base = editor ? editor.base : NATURAL;
+  $('baseColor').value = base || NATURAL;
+  $('btnBaseNone').textContent = base ? 'ohne' : 'zurück';
+}
+
 async function newDesign(){
   const d = emptyDesign('mandel');
-  d.name = '';
   await putDesign(d);
-  const ed = ensureEditor();
   current = d;
-  ed.loadDesign(d, []);            // legt die erste Ebene selbst an
+  currentFinger = 'mittelfinger';
   $('designName').value = '';
-  showView('editor');
-  syncShapeList();
-  refreshLayerList();
-  ed.onHistory();
-  dirty = false;
-  requestAnimationFrame(() => ed.render());
-  fadeHint();
+  await showSet();
 }
 
 async function duplicateDesign(d){
   const full = await getDesign(d.id);
   if(!full) return;
-  const copy = emptyDesign(full.shape);
+  const copy = emptyDesign();
   copy.name = (full.name || 'Ohne Namen') + ' (Kopie)';
-  copy.layers = (full.layers || []).map(l => ({ ...l }));
+  FINGER_KEYS.forEach(k => {
+    const n = full.nails[k] || {};
+    copy.nails[k] = { shape: n.shape, base: n.base, layers: (n.layers || []).map(l => ({ ...l })) };
+  });
   copy.thumb = full.thumb;
   await putDesign(copy);
   await renderGallery();
@@ -183,21 +259,44 @@ function fadeHint(){
 
 function showView(which){
   $('viewGallery').hidden = which !== 'gallery';
+  $('viewSet').hidden = which !== 'set';
   $('viewEditor').hidden = which !== 'editor';
   $('viewTryon').hidden = which !== 'tryon';
 }
 
 async function closeEditor(){
-  const ed = ensureEditor();
+  await stashNail();
+  await saveNow();
+  await showSet();
+}
+
+async function closeSet(){
   const name = $('designName').value.trim();
-  if(current && !name && ed.isEmpty()){
-    await deleteDesign(current.id);      // leerer Entwurf, nicht aufbewahren
+  if(current && !name && isSetEmpty(current)){
+    await deleteDesign(current.id);      // nichts gemalt, nichts behalten
     current = null;
   }else{
     await saveNow();
   }
   showView('gallery');
   await renderGallery();
+}
+
+function isSetEmpty(design){
+  return FINGER_KEYS.every(k => isNailEmpty(design.nails[k]));
+}
+
+/** Den Stand des Editors in den Satz uebernehmen. */
+async function stashNail(){
+  if(!editor || !current) return;
+  const layers = [];
+  for(const l of editor.layerData()){
+    layers.push({
+      id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
+      image: await canvasToImage(l.canvas)
+    });
+  }
+  current.nails[currentFinger] = { shape: editor.shape, base: editor.base, layers };
 }
 
 /* ---------- Speichern ---------- */
@@ -209,18 +308,12 @@ function scheduleSave(){
 
 async function saveNow(){
   clearTimeout(saveTimer);
-  if(!current || !editor) return;
-  const layers = [];
-  for(const l of editor.layerData()){
-    layers.push({
-      id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
-      image: await canvasToImage(l.canvas)
-    });
-  }
-  current.layers = layers;
-  current.shape = editor.shape;
+  if(!current) return;
+  if(editor && $('viewEditor').hidden === false) await stashNail();
   current.name = $('designName').value.trim();
-  current.thumb = await canvasToImage(editor.thumbnail(220));
+  current.updatedAt = Date.now();
+  forgetTextures();
+  current.thumb = await canvasToImage(await setThumbnail(current));
   await putDesign(current);
   dirty = false;
 }
@@ -511,6 +604,7 @@ function renderNailChips(){
   });
   const sel = tryon.selectedNail;
   $('btnNailHide').textContent = sel && !sel.visible ? 'Einblenden' : 'Ausblenden';
+  $('nudgeBar').hidden = !tryon.nails.length;
   $('btnManualNails').textContent = tryon.nails.length ? 'Nagel hinzufügen' : 'Von Hand setzen';
 }
 
@@ -530,10 +624,12 @@ function renderDesignStrip(designs){
     name.textContent = d.name || 'Ohne Namen';
     b.append(img, name);
     b.addEventListener('click', async () => {
-      if(!tryon.selected){ toast('Wähle zuerst einen Nagel'); return; }
-      await tryon.assign(tryon.selected, d.id);
+      // Ein Entwurf ist ein ganzer Satz -- er wird auf alle Nägel gelegt,
+      // jeder Finger bekommt dabei seinen eigenen Nagel.
+      await tryon.assignAll(d.id);
       renderDesignStrip(designs);
       renderNailChips();
+      toast('„' + (d.name || 'Ohne Namen') + '“ aufgelegt');
     });
     box.appendChild(b);
   });
@@ -637,6 +733,43 @@ function wire(){
   });
 
 
+
+  // Satz-Übersicht
+  $('btnSetBack').addEventListener('click', closeSet);
+  $('btnSetTryon').addEventListener('click', async () => { await saveNow(); openTryon(); });
+
+  // Grundfarbe
+  $('baseColor').addEventListener('input', (e) => {
+    ensureEditor().setBase(e.target.value);
+    syncBaseColor();
+    dirty = true; scheduleSave();
+  });
+  $('btnBaseNone').addEventListener('click', () => {
+    const ed = ensureEditor();
+    ed.setBase(ed.base ? null : ($('baseColor').value || NATURAL));
+    syncBaseColor();
+    dirty = true; scheduleSave();
+  });
+
+  $('btnCopyToAll').addEventListener('click', () => {
+    askModal('Auf alle Nägel übertragen?',
+      'Alle anderen Nägel dieses Entwurfs werden durch den aktuellen ersetzt.',
+      'Übertragen', async () => {
+        await stashNail();
+        const quelle = current.nails[currentFinger];
+        FINGER_KEYS.forEach(k => {
+          if(k === currentFinger) return;
+          current.nails[k] = {
+            shape: quelle.shape,
+            base: quelle.base,
+            layers: quelle.layers.map(l => ({ ...l }))
+          };
+        });
+        await saveNow();
+        toast('Auf alle Nägel übertragen');
+      });
+  });
+
   // Anprobe
   $('btnTryon').addEventListener('click', openTryon);
   $('btnTryonBack').addEventListener('click', closeTryon);
@@ -651,6 +784,33 @@ function wire(){
       if(f) loadPhoto(f);
     });
   });
+  $('btnTryonZoomIn').addEventListener('click', () => ensureTryon().zoomBy(1.3));
+  $('btnTryonZoomOut').addEventListener('click', () => ensureTryon().zoomBy(0.77));
+  $('btnTryonZoomReset').addEventListener('click', () => ensureTryon().resetView());
+
+  const NUDGE = {
+    left:['left',0], right:['right',0], up:['up',0], down:['down',0],
+    bigger:['grow',0.06], smaller:['grow',-0.06],
+    wider:['wider',0.06], narrower:['wider',-0.06],
+    turnleft:['turn',-0.05], turnright:['turn',0.05]
+  };
+  let scopeAll = false;
+  $('btnScope').addEventListener('click', (e) => {
+    scopeAll = !scopeAll;
+    e.currentTarget.setAttribute('aria-pressed', String(scopeAll));
+    e.currentTarget.textContent = scopeAll ? 'alle Nägel' : 'nur dieser';
+  });
+  document.querySelectorAll('.nudge[data-nudge]').forEach(b => {
+    b.addEventListener('click', () => {
+      if(!tryon || (!scopeAll && !tryon.selectedNail)){ toast('Wähle zuerst einen Nagel'); return; }
+      const key = b.dataset.nudge;
+      if(key === 'forward'){ tryon.slide(0.12, scopeAll); return; }
+      if(key === 'backward'){ tryon.slide(-0.12, scopeAll); return; }
+      const [what, amount] = NUDGE[key];
+      tryon.nudge(what, amount, scopeAll);
+    });
+  });
+
   $('btnRedetect').addEventListener('click', runDetection);
   $('btnManualNails').addEventListener('click', () => {
     const n = ensureTryon().addManualNails();
@@ -660,7 +820,7 @@ function wire(){
   });
   $('btnApplyAll').addEventListener('click', async () => {
     const sel = tryon && tryon.selectedNail;
-    if(!sel || !sel.designId){ toast('Weise erst einem Nagel einen Entwurf zu'); return; }
+    if(!sel || !sel.designId){ toast('Lege zuerst einen Entwurf auf'); return; }
     await tryon.assignAll(sel.designId);
     renderNailChips();
     toast('Auf alle Nägel übertragen');
@@ -690,6 +850,7 @@ function wire(){
     if(e.key === 'Escape'){
       if(!$('modal').hidden) closeModal();
       else if(!$('viewEditor').hidden) closeEditor();
+      else if(!$('viewSet').hidden) closeSet();
       else if(!$('viewTryon').hidden) closeTryon();
     }
   });

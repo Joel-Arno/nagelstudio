@@ -7,6 +7,7 @@
  */
 
 import { SHAPE_W, SHAPE_H, shapePath } from './shapes.js';
+import { NATURAL } from './store.js';
 
 export const RES = 6;                 // Skalierung des normierten Systems
 export const IMG_W = SHAPE_W * RES;   // 600
@@ -29,6 +30,7 @@ export class NailEditor {
     this.ctx = viewCanvas.getContext('2d');
 
     this.shape = 'mandel';
+    this.base = NATURAL;       // deckende Grundfarbe, null = ohne
     this.layers = [];          // { id, name, visible, opacity, canvas, ctx }
     this.activeLayerId = null;
 
@@ -154,6 +156,13 @@ export class NailEditor {
   setShape(id){
     this.shape = id;
     this._invalidate('shape');
+  }
+
+  /** Grundfarbe des Nagels. null laesst den Nagel an unbemalten Stellen frei. */
+  setBase(color){
+    this.base = color;
+    this._invalidate('layers');
+    this._changed('base');
   }
 
   /* ---------------- Werkzeuge ---------------- */
@@ -500,6 +509,13 @@ export class NailEditor {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, IMG_W, IMG_H);
 
+    // Grundfarbe zuunterst: unbemalte Stellen bleiben dadurch deckend --
+    // der Nagel sieht spaeter auf der Hand aus wie hier beim Malen.
+    if(this.base){
+      ctx.fillStyle = this.base;
+      ctx.fillRect(0, 0, IMG_W, IMG_H);
+    }
+
     for(const l of this.layers){
       if(!l.visible || l.opacity <= 0) continue;
       ctx.globalAlpha = l.opacity;
@@ -534,13 +550,26 @@ export class NailEditor {
     ctx.clearRect(0, 0, this.view.width, this.view.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Nagelbett als Untergrund, damit man sieht, was man tut
+    // Untergrund: ohne Grundfarbe ein Karo, damit "durchsichtig" erkennbar ist
     ctx.save();
     ctx.translate(ox, oy);
     ctx.scale(scale * RES, scale * RES);
     const path = shapePath(this.shape);
-    ctx.fillStyle = '#F0DCD5';
-    ctx.fill(path);
+    if(this.base){
+      ctx.fillStyle = this.base;
+      ctx.fill(path);
+    }else{
+      ctx.save();
+      ctx.clip(path);
+      const step = 6;
+      for(let y = 0; y < SHAPE_H; y += step){
+        for(let x = 0; x < SHAPE_W; x += step){
+          ctx.fillStyle = ((x / step + y / step) % 2) ? '#4A4048' : '#372F35';
+          ctx.fillRect(x, y, step, step);
+        }
+      }
+      ctx.restore();
+    }
     ctx.restore();
 
     if(this._compositeDirty || this._drawing){
@@ -583,20 +612,16 @@ export class NailEditor {
     const h = Math.round(w * IMG_H / IMG_W);
     const c = newCanvas(w, h);
     const ctx = c.getContext('2d');
-    ctx.fillStyle = '#F0DCD5';
-    ctx.save();
-    ctx.scale(w / IMG_W * RES, h / IMG_H * RES);
-    ctx.fill(shapePath(this.shape));
-    ctx.restore();
     ctx.drawImage(this.exportTexture(), 0, 0, w, h);
     return c;
   }
 
-  /** Setzt den Editor auf einen geladenen Entwurf. Bilder sind <img>-Elemente. */
-  loadDesign(design, images){
-    this.shape = design.shape || 'mandel';
+  /** Setzt den Editor auf einen Nagel des Satzes. Bilder sind <img>-Elemente. */
+  loadDesign(nail, images){
+    this.shape = (nail && nail.shape) || 'mandel';
+    this.base = nail && 'base' in nail ? nail.base : NATURAL;
     this.layers = [];
-    (design.layers || []).forEach((l, i) => {
+    ((nail && nail.layers) || []).forEach((l, i) => {
       const canvas = newCanvas();
       const ctx = canvas.getContext('2d');
       const img = images && images[i];
@@ -623,7 +648,9 @@ export class NailEditor {
     }));
   }
 
+  /** Leer heisst: keine Grundfarbe und nichts gezeichnet. */
   isEmpty(){
+    if(this.base && this.base !== NATURAL) return false;
     for(const l of this.layers){
       const d = l.ctx.getImageData(0, 0, IMG_W, IMG_H).data;
       for(let i = 3; i < d.length; i += 4){ if(d[i] !== 0) return false; }

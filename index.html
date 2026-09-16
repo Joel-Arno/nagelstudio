@@ -42,11 +42,27 @@
   </div>
 </section>
 
+
+<!-- ============ Satz-Übersicht ============ -->
+<section class="view view-set" id="viewSet" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="btnSetBack" type="button" aria-label="Zurück zur Übersicht">‹</button>
+    <input class="name-field" id="designName" type="text" placeholder="Name des Entwurfs" maxlength="40" aria-label="Name des Entwurfs">
+    <div class="bar-actions">
+      <button class="btn ghost" id="btnSetTryon" type="button">Anprobieren</button>
+    </div>
+  </header>
+  <div class="set-stage">
+    <div class="nail-set" id="nailSet"></div>
+    <p class="set-hint">Tippe einen Nagel an, um ihn zu bemalen. Die Nägel lassen sich einzeln gestalten – oder du überträgst einen fertigen auf alle anderen.</p>
+  </div>
+</section>
+
 <!-- ============ Editor ============ -->
 <section class="view view-editor" id="viewEditor" hidden>
   <header class="bar">
-    <button class="icon-btn" id="btnBack" type="button" aria-label="Zurück zur Übersicht">‹</button>
-    <input class="name-field" id="designName" type="text" placeholder="Name des Entwurfs" maxlength="40" aria-label="Name des Entwurfs">
+    <button class="icon-btn" id="btnBack" type="button" aria-label="Zurück zum Entwurf">‹</button>
+    <div class="finger-switch" id="fingerSwitch" role="tablist" aria-label="Nagel wählen"></div>
     <div class="bar-actions">
       <button class="icon-btn" id="btnUndo" type="button" aria-label="Rückgängig" disabled>↺</button>
       <button class="icon-btn" id="btnRedo" type="button" aria-label="Wiederholen" disabled>↻</button>
@@ -108,6 +124,13 @@
           <label for="colorPicker">Eigene Farbe</label>
           <input type="color" id="colorPicker" value="#D8456B">
         </div>
+        <div class="field-row">
+          <label for="baseColor">Grundfarbe des Nagels</label>
+          <span class="base-controls">
+            <input type="color" id="baseColor" value="#EFD9D2">
+            <button class="btn ghost" id="btnBaseNone" type="button">ohne</button>
+          </span>
+        </div>
         <div class="field">
           <div class="field-head"><label for="sizeRange">Größe</label><output id="sizeOut">26</output></div>
           <input type="range" id="sizeRange" min="2" max="120" step="1" value="26">
@@ -122,6 +145,7 @@
       <div class="tab-panel" id="panelLayers">
         <div class="layer-list" id="layerList"></div>
         <button class="btn ghost full" id="btnAddLayer" type="button">Ebene hinzufügen</button>
+        <button class="btn ghost full" id="btnCopyToAll" type="button">Diesen Nagel auf alle übertragen</button>
         <p class="hint">Grundfarbe unten, Verzierungen darüber. Ebenen lassen sich einzeln ausblenden — praktisch, um Varianten zu vergleichen.</p>
       </div>
 
@@ -148,9 +172,14 @@
 
   <div class="tryon-stage">
     <canvas id="tryonCanvas"></canvas>
+    <div class="zoom-controls">
+      <button class="icon-btn small" id="btnTryonZoomOut" type="button" aria-label="Verkleinern">−</button>
+      <button class="icon-btn small" id="btnTryonZoomReset" type="button" aria-label="Ansicht zurücksetzen">⤢</button>
+      <button class="icon-btn small" id="btnTryonZoomIn" type="button" aria-label="Vergrößern">＋</button>
+    </div>
     <div class="tryon-empty" id="tryonEmpty">
       <h3>Hand fotografieren</h3>
-      <p>Hand flach halten, Finger leicht gespreizt, gutes Licht. Die Nägel werden erkannt und lassen sich danach von Hand nachziehen.</p>
+      <p>Hand flach halten, Finger leicht gespreizt, gutes Licht, Handrücken zur Kamera. Die Nägel werden erkannt und lassen sich danach zoomen und von Hand nachziehen.</p>
       <div class="row" style="justify-content:center">
         <button class="btn primary" id="btnPhotoCamera2" type="button">Foto aufnehmen</button>
         <button class="btn" id="btnPhotoLibrary2" type="button">Aus Fotos wählen</button>
@@ -162,6 +191,37 @@
   <div class="tryon-bar" id="tryonBar" hidden>
     <div class="nail-chips" id="nailChips"></div>
     <div class="design-strip" id="designStrip"></div>
+    <div class="nudge-bar" id="nudgeBar">
+      <span class="nudge-group scope-group">
+        <button class="nudge scope" id="btnScope" type="button" aria-pressed="false">nur dieser</button>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Nagel verschieben">
+        <button class="nudge" data-nudge="left" type="button" aria-label="nach links">←</button>
+        <button class="nudge" data-nudge="up" type="button" aria-label="nach oben">↑</button>
+        <button class="nudge" data-nudge="down" type="button" aria-label="nach unten">↓</button>
+        <button class="nudge" data-nudge="right" type="button" aria-label="nach rechts">→</button>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Größe">
+        <button class="nudge" data-nudge="smaller" type="button" aria-label="kleiner">−</button>
+        <button class="nudge" data-nudge="bigger" type="button" aria-label="größer">＋</button>
+        <span class="nudge-label">Größe</span>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Breite">
+        <button class="nudge" data-nudge="narrower" type="button" aria-label="schmaler">‹</button>
+        <button class="nudge" data-nudge="wider" type="button" aria-label="breiter">›</button>
+        <span class="nudge-label">Breite</span>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Drehen">
+        <button class="nudge" data-nudge="turnleft" type="button" aria-label="nach links drehen">↺</button>
+        <button class="nudge" data-nudge="turnright" type="button" aria-label="nach rechts drehen">↻</button>
+        <span class="nudge-label">Drehen</span>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Zur Fingerspitze schieben">
+        <button class="nudge" data-nudge="backward" type="button" aria-label="Richtung Gelenk">⇣</button>
+        <button class="nudge" data-nudge="forward" type="button" aria-label="Richtung Fingerspitze">⇡</button>
+        <span class="nudge-label">Sitz</span>
+      </span>
+    </div>
     <div class="tryon-actions">
       <button class="btn ghost" id="btnApplyAll" type="button">Auf alle Nägel</button>
       <button class="btn ghost" id="btnNailHide" type="button">Ausblenden</button>

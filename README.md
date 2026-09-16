@@ -7,6 +7,11 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 
 **Fertig — Stufe 1: Zeichenstudio**
 
+* Ein Entwurf ist ein Satz aus fünf Nägeln. Die Übersicht zeigt alle fünf,
+  jeder lässt sich einzeln bemalen; ein fertiger Nagel kann auf alle
+  übertragen werden
+* Jeder Nagel hat eine deckende Grundfarbe unter den Ebenen — unbemalte
+  Stellen bleiben so, wie sie beim Malen aussehen, auch später auf der Hand
 * Zeichnen mit Apple Pencil inklusive Druckstärke; der Finger schiebt und zoomt das Bild
 * Werkzeuge: Pinsel, Liner, Glitzer, Radierer, Ebene füllen, Ebene leeren
 * Ebenen mit Sichtbarkeit, Reihenfolge und Deckkraft
@@ -23,8 +28,13 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
   liegen im Projekt — kein fremdes CDN, funktioniert offline
 * Nagelflächen werden aus dem letzten Fingerglied geschätzt und mit dem
   Design belegt; einzeln oder auf alle Nägel zugleich
-* Jeder Nagel lässt sich verschieben, drehen, in Länge und Breite ändern und
-  ausblenden; fehlende Nägel lassen sich von Hand ergänzen
+* Beim Auflegen bekommt jeder Finger seinen eigenen Nagel aus dem Satz
+* Zoomen und Schieben im Bild; jeder Nagel lässt sich ziehen, drehen, in Größe
+  und Breite ändern und ausblenden — entweder mit Griffen oder mit Knöpfen,
+  wahlweise für einen einzelnen Nagel oder für alle zugleich
+* Fehlende Nägel lassen sich von Hand ergänzen
+* Fotos werden vor der Erkennung aufgerichtet und verkleinert, damit die
+  Drehung von Handyfotos (EXIF) nicht dazu führt, dass die Nägel danebensitzen
 * Licht und Schatten der Hand scheinen durch das Design, dazu ein Glanz —
   sonst wirkt der Nagel wie aufgeklebt
 * Ergebnis als Bild teilen oder sichern

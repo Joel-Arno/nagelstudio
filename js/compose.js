@@ -7,18 +7,27 @@ import { shapePath } from './shapes.js';
 import { RES, IMG_W, IMG_H } from './draw.js';
 import { imageToUrl, releaseUrl, loadImage } from './store.js';
 
-const cache = new Map();   // designId -> { canvas, updatedAt }
+const cache = new Map();   // designId:finger -> { canvas, updatedAt }
 
-export async function designTexture(design){
-  const hit = cache.get(design.id);
+/** Fertiges Bild eines einzelnen Nagels aus dem Satz. */
+export async function designTexture(design, fingerKey = 'zeigefinger'){
+  const key = design.id + ':' + fingerKey;
+  const hit = cache.get(key);
   if(hit && hit.updatedAt === design.updatedAt) return hit.canvas;
+
+  const nail = (design.nails && (design.nails[fingerKey] || design.nails.zeigefinger)) || {};
 
   const canvas = document.createElement('canvas');
   canvas.width = IMG_W;
   canvas.height = IMG_H;
   const ctx = canvas.getContext('2d');
 
-  for(const layer of design.layers || []){
+  if(nail.base){
+    ctx.fillStyle = nail.base;
+    ctx.fillRect(0, 0, IMG_W, IMG_H);
+  }
+
+  for(const layer of nail.layers || []){
     if(layer.visible === false || layer.opacity === 0) continue;
     const url = imageToUrl(layer.image);
     if(!url) continue;
@@ -35,12 +44,47 @@ export async function designTexture(design){
   ctx.globalCompositeOperation = 'destination-in';
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   ctx.fillStyle = '#000';
-  ctx.fill(shapePath(design.shape || 'mandel'));
+  ctx.fill(shapePath(nail.shape || 'mandel'));
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'source-over';
 
-  cache.set(design.id, { canvas, updatedAt: design.updatedAt });
+  cache.set(key, { canvas, updatedAt: design.updatedAt });
   return canvas;
 }
 
-export function forgetTexture(id){ cache.delete(id); }
+export function forgetTextures(){ cache.clear(); }
+
+/** Relative Groesse und Neigung der fuenf Naegel in der Uebersicht. */
+export const SET_LAYOUT = [
+  { key:'daumen',       scale:0.86, tilt:-0.30 },
+  { key:'zeigefinger',  scale:0.97, tilt:-0.10 },
+  { key:'mittelfinger', scale:1.00, tilt: 0.00 },
+  { key:'ringfinger',   scale:0.95, tilt: 0.10 },
+  { key:'kleiner',      scale:0.80, tilt: 0.26 }
+];
+
+/** Vorschaubild eines ganzen Satzes: die fuenf Naegel nebeneinander. */
+export async function setThumbnail(design, nailWidth = 62){
+  const gap = Math.round(nailWidth * 0.22);
+  const nailHeight = nailWidth * IMG_H / IMG_W;
+  const width = Math.round(SET_LAYOUT.length * nailWidth + (SET_LAYOUT.length - 1) * gap + nailWidth * 0.5);
+  const height = Math.round(nailHeight * 1.18);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  for(let i = 0; i < SET_LAYOUT.length; i++){
+    const { key, scale, tilt } = SET_LAYOUT[i];
+    const tex = await designTexture(design, key);
+    const w = nailWidth * scale, h = nailHeight * scale;
+    const cx = nailWidth * 0.25 + i * (nailWidth + gap) + nailWidth / 2;
+    const cy = height - h / 2 - height * 0.06;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(tilt);
+    ctx.drawImage(tex, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+  return canvas;
+}

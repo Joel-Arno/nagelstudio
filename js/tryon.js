@@ -27,8 +27,15 @@ export class TryOn {
     this.opacity = 1;
     this.gloss = true;
 
+    this.zoom = 1;
+    this.panX = 0;
+    this.panY = 0;
+
     this.onChange = null;
     this._drag = null;
+    this._pointers = new Map();
+    this._pinch = null;
+    this._viewDrag = null;
     this._draft = false;
     this._frame = null;
     this._textures = new Map();
@@ -39,12 +46,32 @@ export class TryOn {
 
   /* ---------------- Foto ---------------- */
 
+  /**
+   * Das Foto wird zuerst in ein Canvas gezeichnet und von dort verwendet.
+   * Handyfotos tragen ihre Drehung als EXIF-Angabe; Anzeige und Erkennung
+   * koennen das unterschiedlich auslegen, dann sitzen die Naegel daneben.
+   * Nach dem Umkopieren sind die Bilddaten aufrecht, und beide sehen
+   * garantiert dasselbe Bild. Sehr grosse Fotos werden dabei verkleinert --
+   * die Erkennung braucht keine zwoelf Megapixel.
+   */
   async setPhoto(img){
-    this.photo = img;
+    const MAX = 2000;
+    const srcW = img.naturalWidth, srcH = img.naturalHeight;
+    const k = Math.min(1, MAX / Math.max(srcW, srcH));
+    const w = Math.max(1, Math.round(srcW * k)), h = Math.max(1, Math.round(srcH * k));
+
+    const flat = document.createElement('canvas');
+    flat.width = w; flat.height = h;
+    const fctx = flat.getContext('2d');
+    fctx.drawImage(img, 0, 0, w, h);
+    // wie ein <img> ansprechbar halten
+    flat.naturalWidth = w;
+    flat.naturalHeight = h;
+
+    this.photo = flat;
     this.nails = [];
     this.selected = null;
-
-    const w = img.naturalWidth, h = img.naturalHeight;
+    this.zoom = 1; this.panX = 0; this.panY = 0;
     const shade = document.createElement('canvas');
     shade.width = w; shade.height = h;
     const sctx = shade.getContext('2d');
@@ -91,7 +118,7 @@ export class TryOn {
       hand.nails.forEach(n => {
         nails.push(Object.assign(
           { id: 'n' + hi + '-' + n.finger, hand: hi, handName, name: n.name,
-            visible: true, designId: null },
+            finger: n.finger, visible: true, designId: null },
           boxFromQuad(n.quad)
         ));
       });
@@ -116,7 +143,9 @@ export class TryOn {
     for(let i = 0; i < count; i++){
       nails.push({
         id: 'm-' + Date.now().toString(36) + '-' + i,
-        hand: 0, handName: 'von Hand', name: FINGERS[i % FINGERS.length].name,
+        hand: 0, handName: 'von Hand',
+        name: FINGERS[i % FINGERS.length].name,
+        finger: FINGERS[i % FINGERS.length].key,
         cx: count === 1 ? W * 0.5 : W * (0.28 + i * 0.11),
         cy: count === 1 ? H * 0.5 : H * 0.45,
         angle: -Math.PI / 2,
@@ -142,26 +171,33 @@ export class TryOn {
     if(!nail) return;
     nail.designId = designId;
     nail.visible = true;
-    await this._ensureTexture(designId);
+    await this._ensureTexture(designId, nail.finger);
     this._invalidate();
   }
 
+  /** Ganzen Satz auflegen: jeder Finger bekommt seinen eigenen Nagel. */
   async assignAll(designId){
-    await this._ensureTexture(designId);
-    this.nails.forEach(n => { n.designId = designId; n.visible = true; });
+    for(const n of this.nails){
+      n.designId = designId;
+      n.visible = true;
+      await this._ensureTexture(designId, n.finger);
+    }
     this._invalidate();
   }
 
-  async _ensureTexture(designId){
-    if(!designId || this._textures.has(designId)) return;
+  _texKey(designId, finger){ return designId + ':' + (finger || 'zeigefinger'); }
+
+  async _ensureTexture(designId, finger){
+    const key = this._texKey(designId, finger);
+    if(!designId || this._textures.has(key)) return;
     const design = this.designs.get(designId);
     if(!design) return;
-    this._textures.set(designId, await designTexture(design));
+    this._textures.set(key, await designTexture(design, finger));
   }
 
   async refreshTextures(){
     this._textures.clear();
-    for(const n of this.nails) await this._ensureTexture(n.designId);
+    for(const n of this.nails) await this._ensureTexture(n.designId, n.finger);
     this._invalidate();
   }
 
@@ -176,6 +212,48 @@ export class TryOn {
     this._invalidate();
   }
 
+  /**
+   * Naegel schrittweise verstellen (Knoepfe statt Griffe).
+   * Mit alle = true gilt der Schritt fuer jeden Nagel -- sitzt die Erkennung
+   * durchgehend zu klein oder zu tief, ist das in ein paar Tipps erledigt.
+   */
+  nudge(what, amount, alle = false){
+    const liste = alle ? this.nails.filter(n => n.visible)
+                       : (this.selectedNail ? [this.selectedNail] : []);
+    if(!liste.length) return;
+
+    for(const n of liste){
+      const step = Math.max(1, n.h * 0.04);
+      if(what === 'left')   n.cx -= step;
+      if(what === 'right')  n.cx += step;
+      if(what === 'up')     n.cy -= step;
+      if(what === 'down')   n.cy += step;
+      if(what === 'grow'){  n.w *= (1 + amount); n.h *= (1 + amount); }
+      if(what === 'wider')  n.w *= (1 + amount);
+      if(what === 'turn')   n.angle += amount;
+      n.w = Math.max(5, n.w);
+      n.h = Math.max(6, n.h);
+    }
+    this._invalidate();
+    if(this.onChange) this.onChange('adjust');
+  }
+
+  /**
+   * Naegel entlang ihrer eigenen Achse verschieben -- "weiter zur
+   * Fingerspitze" statt "nach rechts". Bei gespreizten Fingern zeigt jeder
+   * in eine andere Richtung, deshalb rechnet das pro Nagel.
+   */
+  slide(amount, alle = false){
+    const liste = alle ? this.nails.filter(n => n.visible)
+                       : (this.selectedNail ? [this.selectedNail] : []);
+    for(const n of liste){
+      n.cx += Math.cos(n.angle) * n.h * amount;
+      n.cy += Math.sin(n.angle) * n.h * amount;
+    }
+    this._invalidate();
+    if(this.onChange) this.onChange('adjust');
+  }
+
   setOpacity(v){ this.opacity = v; this._invalidate(); }
   setGloss(on){ this.gloss = !!on; this._invalidate(); }
 
@@ -185,8 +263,48 @@ export class TryOn {
     const r = this.canvas.getBoundingClientRect();
     if(!this.photo) return { scale:1, ox:0, oy:0, rect:r };
     const W = this.photo.naturalWidth, H = this.photo.naturalHeight;
-    const scale = Math.min(r.width / W, r.height / H);
-    return { scale, ox: (r.width - W * scale) / 2, oy: (r.height - H * scale) / 2, rect: r };
+    const fit = Math.min(r.width / W, r.height / H);
+    const scale = fit * this.zoom;
+    return {
+      scale,
+      ox: (r.width - W * scale) / 2 + this.panX,
+      oy: (r.height - H * scale) / 2 + this.panY,
+      rect: r
+    };
+  }
+
+  zoomBy(factor, cx, cy){
+    const before = this._layout();
+    const r = before.rect;
+    const px = cx == null ? r.width / 2 : cx - r.left;
+    const py = cy == null ? r.height / 2 : cy - r.top;
+    const ix = (px - before.ox) / before.scale;
+    const iy = (py - before.oy) / before.scale;
+
+    this.zoom = Math.min(8, Math.max(1, this.zoom * factor));
+    const after = this._layout();
+    this.panX += px - (after.ox + ix * after.scale);
+    this.panY += py - (after.oy + iy * after.scale);
+    this._clampPan();
+    this._invalidate();
+  }
+
+  resetView(){
+    this.zoom = 1; this.panX = 0; this.panY = 0;
+    this._invalidate();
+  }
+
+  /** Das Foto soll nicht aus dem Bild geschoben werden koennen. */
+  _clampPan(){
+    const r = this.canvas.getBoundingClientRect();
+    if(!this.photo) return;
+    const W = this.photo.naturalWidth, H = this.photo.naturalHeight;
+    const fit = Math.min(r.width / W, r.height / H);
+    const scale = fit * this.zoom;
+    const overX = Math.max(0, (W * scale - r.width) / 2);
+    const overY = Math.max(0, (H * scale - r.height) / 2);
+    this.panX = Math.max(-overX, Math.min(overX, this.panX));
+    this.panY = Math.max(-overY, Math.min(overY, this.panY));
   }
 
   _toPhoto(clientX, clientY){
@@ -208,6 +326,21 @@ export class TryOn {
     c.addEventListener('pointerdown', (e) => {
       if(!this.photo) return;
       c.setPointerCapture(e.pointerId);
+      this._pointers.set(e.pointerId, e);
+
+      if(this._pointers.size === 2){
+        this._drag = null;
+        this._viewDrag = null;
+        const pts = [...this._pointers.values()];
+        this._pinch = {
+          dist: Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY),
+          cx: (pts[0].clientX + pts[1].clientX) / 2,
+          cy: (pts[0].clientY + pts[1].clientY) / 2
+        };
+        return;
+      }
+      if(this._pointers.size > 2) return;
+
       const p = this._toPhoto(e.clientX, e.clientY);
 
       const sel = this.selectedNail;
@@ -229,10 +362,38 @@ export class TryOn {
         this._draft = true;
         this._invalidate();
         if(this.onChange) this.onChange('select');
+      }else{
+        // neben den Naegeln: das Foto verschieben
+        this._viewDrag = { x: e.clientX, y: e.clientY };
       }
     });
 
     c.addEventListener('pointermove', (e) => {
+      if(this._pointers.has(e.pointerId)) this._pointers.set(e.pointerId, e);
+
+      if(this._pinch && this._pointers.size >= 2){
+        const pts = [...this._pointers.values()];
+        const dist = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
+        const cx = (pts[0].clientX + pts[1].clientX) / 2;
+        const cy = (pts[0].clientY + pts[1].clientY) / 2;
+        if(this._pinch.dist > 0){
+          this.panX += cx - this._pinch.cx;
+          this.panY += cy - this._pinch.cy;
+          this.zoomBy(dist / this._pinch.dist, cx, cy);
+        }
+        this._pinch = { dist, cx, cy };
+        return;
+      }
+
+      if(this._viewDrag){
+        this.panX += e.clientX - this._viewDrag.x;
+        this.panY += e.clientY - this._viewDrag.y;
+        this._viewDrag = { x: e.clientX, y: e.clientY };
+        this._clampPan();
+        this._invalidate();
+        return;
+      }
+
       if(!this._drag) return;
       const p = this._toPhoto(e.clientX, e.clientY);
       const d = this._drag;
@@ -254,7 +415,10 @@ export class TryOn {
       this._invalidate();
     });
 
-    const end = () => {
+    const end = (e) => {
+      this._pointers.delete(e.pointerId);
+      if(this._pointers.size < 2) this._pinch = null;
+      this._viewDrag = null;
       if(!this._drag) return;
       this._drag = null;
       this._draft = false;
@@ -263,6 +427,12 @@ export class TryOn {
     };
     c.addEventListener('pointerup', end);
     c.addEventListener('pointercancel', end);
+
+    c.addEventListener('wheel', (e) => {
+      if(!this.photo) return;
+      e.preventDefault();
+      this.zoomBy(e.deltaY < 0 ? 1.12 : 0.89, e.clientX, e.clientY);
+    }, { passive:false });
   }
 
   _handlePoints(nail){
@@ -324,7 +494,7 @@ export class TryOn {
     ctx.scale(scale, scale);
     for(const nail of this.nails){
       if(!nail.visible || !nail.designId) continue;
-      const tex = this._textures.get(nail.designId);
+      const tex = this._textures.get(this._texKey(nail.designId, nail.finger));
       if(tex) this._paintNail(ctx, nail, tex);
     }
     ctx.restore();
@@ -416,7 +586,7 @@ export class TryOn {
     this._draft = false;
     for(const nail of this.nails){
       if(!nail.visible || !nail.designId) continue;
-      const tex = this._textures.get(nail.designId);
+      const tex = this._textures.get(this._texKey(nail.designId, nail.finger));
       if(tex) this._paintNail(ctx, nail, tex);
     }
     this._draft = wasDraft;

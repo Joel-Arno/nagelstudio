@@ -48,18 +48,59 @@ export function newId(){
   return 'd-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }
 
+/** Die fuenf Naegel einer Hand, in der Reihenfolge der Uebersicht. */
+export const FINGER_KEYS = ['daumen', 'zeigefinger', 'mittelfinger', 'ringfinger', 'kleiner'];
+export const FINGER_NAMES = {
+  daumen:'Daumen', zeigefinger:'Zeigefinger', mittelfinger:'Mittelfinger',
+  ringfinger:'Ringfinger', kleiner:'Kleiner Finger'
+};
+
+/** Grundfarbe, die ein frischer Nagel hat -- ein heller Naturton. */
+export const NATURAL = '#EFD9D2';
+
+export function emptyNail(shape = 'mandel'){
+  return { shape, base: NATURAL, layers: [] };   // layers: { id, name, visible, opacity, image }
+}
+
+/**
+ * Ein Entwurf ist ein Satz aus fuenf Naegeln. Jeder Nagel hat eine
+ * deckende Grundfarbe und darueber die gezeichneten Ebenen -- was man beim
+ * Malen sieht, liegt spaeter genauso auf der Hand.
+ */
 export function emptyDesign(shape = 'mandel'){
   const now = Date.now();
+  const nails = {};
+  FINGER_KEYS.forEach(k => { nails[k] = emptyNail(shape); });
   return {
     id: newId(),
     name: '',
-    shape,
-    layers: [],          // { id, name, visible, opacity, image }
+    nails,
     thumb: null,
     createdAt: now,
     updatedAt: now,
     deletedAt: null
   };
+}
+
+/**
+ * Entwuerfe aus der ersten Fassung bestanden aus einem einzigen Nagel.
+ * Die werden beim Laden zu einem Satz aufgefaltet: dieselbe Zeichnung liegt
+ * dann auf allen fuenf Naegeln und kann dort weiterbearbeitet werden.
+ */
+export function migrateDesign(d){
+  if(!d || d.nails) return d;
+  const nails = {};
+  FINGER_KEYS.forEach(k => {
+    nails[k] = {
+      shape: d.shape || 'mandel',
+      base: NATURAL,
+      layers: (d.layers || []).map(l => ({ ...l }))
+    };
+  });
+  d.nails = nails;
+  delete d.layers;
+  delete d.shape;
+  return d;
 }
 
 export async function putDesign(design){
@@ -69,7 +110,8 @@ export async function putDesign(design){
 }
 
 export async function getDesign(id){
-  return tx('readonly', s => ({ __req: s.get(id) }));
+  const d = await tx('readonly', s => ({ __req: s.get(id) }));
+  return d ? migrateDesign(d) : d;
 }
 
 /** Alle lebenden Entwuerfe, zuletzt geaendert zuerst. */
@@ -77,6 +119,7 @@ export async function listDesigns(){
   const all = await tx('readonly', s => ({ __req: s.getAll() }));
   return (all || [])
     .filter(d => !d.deletedAt)
+    .map(migrateDesign)
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
@@ -85,7 +128,7 @@ export async function deleteDesign(id){
   const d = await getDesign(id);
   if(!d) return;
   d.deletedAt = Date.now();
-  d.layers = [];
+  d.nails = {};
   d.thumb = null;
   await putDesign(d);
 }
@@ -157,13 +200,20 @@ function dataUrlToBlob(url){
 /* Manche Safari-Versionen stolpern ueber verschachtelte Blobs im
    structured clone. Ein flacher Nachbau des Datensatzes geht sicher durch. */
 function structuredCloneSafe(d){
+  const nails = {};
+  for(const [key, nail] of Object.entries(d.nails || {})){
+    nails[key] = {
+      shape: nail.shape,
+      base: nail.base,
+      layers: (nail.layers || []).map(l => ({
+        id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, image: l.image
+      }))
+    };
+  }
   return {
     id: d.id,
     name: d.name,
-    shape: d.shape,
-    layers: (d.layers || []).map(l => ({
-      id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, image: l.image
-    })),
+    nails,
     thumb: d.thumb,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
@@ -179,14 +229,21 @@ export const FILE_VERSION = 1;
 export async function exportDesigns(designs){
   const out = [];
   for(const d of designs){
+    const nails = {};
+    for(const [key, nail] of Object.entries(d.nails || {})){
+      nails[key] = {
+        shape: nail.shape,
+        base: nail.base,
+        layers: await Promise.all((nail.layers || []).map(async l => ({
+          id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
+          image: await imageToDataUrl(l.image)
+        })))
+      };
+    }
     out.push({
       id: d.id,
       name: d.name,
-      shape: d.shape,
-      layers: await Promise.all((d.layers || []).map(async l => ({
-        id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
-        image: await imageToDataUrl(l.image)
-      }))),
+      nails,
       thumb: await imageToDataUrl(d.thumb),
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
@@ -197,7 +254,8 @@ export async function exportDesigns(designs){
 }
 
 function validDesign(d){
-  return d && typeof d.id === 'string' && Array.isArray(d.layers) && typeof d.updatedAt === 'number';
+  return d && typeof d.id === 'string' && typeof d.updatedAt === 'number'
+      && (d.nails || Array.isArray(d.layers));   // neues oder altes Format
 }
 
 /**
@@ -215,17 +273,39 @@ export async function mergeDesigns(payload){
     const mine = await getDesign(raw.id);
     if(mine && mine.updatedAt >= raw.updatedAt){ stats.uebersprungen++; continue; }
 
+    const readLayers = (list) => (list || []).map(l => ({
+      id: String(l.id || newId()),
+      name: String(l.name || 'Ebene'),
+      visible: l.visible !== false,
+      opacity: Number.isFinite(l.opacity) ? l.opacity : 1,
+      image: dataUrlToBlob(l.image)
+    }));
+
+    const nails = {};
+    if(raw.nails){
+      FINGER_KEYS.forEach(k => {
+        const n = raw.nails[k] || {};
+        nails[k] = {
+          shape: String(n.shape || 'mandel'),
+          base: typeof n.base === 'string' ? n.base : NATURAL,
+          layers: readLayers(n.layers)
+        };
+      });
+    }else{
+      // Datei aus der ersten Fassung: ein Nagel wird zum Satz
+      FINGER_KEYS.forEach(k => {
+        nails[k] = {
+          shape: String(raw.shape || 'mandel'),
+          base: NATURAL,
+          layers: readLayers(raw.layers)
+        };
+      });
+    }
+
     const incoming = {
       id: raw.id,
       name: String(raw.name || ''),
-      shape: String(raw.shape || 'mandel'),
-      layers: (raw.layers || []).map(l => ({
-        id: String(l.id || newId()),
-        name: String(l.name || 'Ebene'),
-        visible: l.visible !== false,
-        opacity: Number.isFinite(l.opacity) ? l.opacity : 1,
-        image: dataUrlToBlob(l.image)
-      })),
+      nails,
       thumb: dataUrlToBlob(raw.thumb),
       createdAt: Number(raw.createdAt) || Date.now(),
       updatedAt: Number(raw.updatedAt) || Date.now(),
