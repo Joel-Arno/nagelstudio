@@ -1,5 +1,9 @@
 /* Offline-Betrieb: Die App-Dateien liegen im Cache, damit das Studio auch
-   ohne Netz startet. Entwuerfe liegen ohnehin lokal in IndexedDB. */
+   ohne Netz startet. Entwuerfe liegen ohnehin lokal in IndexedDB.
+
+   Bibliothek und Modell der Handerkennung (rund 17 MB) stehen bewusst NICHT
+   in dieser Liste: sie werden erst beim ersten Oeffnen der Anprobe geladen
+   und danach im selben Cache abgelegt. So bleibt der erste Start leicht. */
 
 const CACHE = 'nagelstudio-v1';
 const ASSETS = [
@@ -10,6 +14,10 @@ const ASSETS = [
   './js/draw.js',
   './js/store.js',
   './js/shapes.js',
+  './js/tryon.js',
+  './js/handdetect.js',
+  './js/compose.js',
+  './js/warp.js',
   './manifest.webmanifest',
   './icon.png',
   './icon-512.png'

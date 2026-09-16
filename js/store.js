@@ -244,8 +244,12 @@ export async function mergeDesigns(payload){
  * AirDrop), sonst als normaler Download.
  */
 export async function shareFile(filename, json){
-  const text = JSON.stringify(json);
-  const file = new File([text], filename, { type:'application/json' });
+  return shareBlob(filename, new Blob([JSON.stringify(json)], { type:'application/json' }));
+}
+
+/** Gibt einen beliebigen Blob weiter -- Teilen-Menue, sonst Download. */
+export async function shareBlob(filename, blob){
+  const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
 
   if(navigator.canShare && navigator.canShare({ files:[file] }) && navigator.share){
     try{
@@ -257,7 +261,7 @@ export async function shareFile(filename, json){
     }
   }
 
-  const url = URL.createObjectURL(new Blob([text], { type:'application/json' }));
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;

@@ -4,10 +4,11 @@
 
 import { SHAPES, shapeSvg, shapeById } from './shapes.js';
 import { NailEditor, IMG_W, IMG_H } from './draw.js';
+import { TryOn } from './tryon.js';
 import {
   emptyDesign, putDesign, getDesign, listDesigns, deleteDesign, purgeDeleted,
   canvasToImage, imageToUrl, releaseUrl, loadImage,
-  exportDesigns, mergeDesigns, shareFile, storageEstimate
+  exportDesigns, mergeDesigns, shareFile, shareBlob, storageEstimate
 } from './store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -183,6 +184,7 @@ function fadeHint(){
 function showView(which){
   $('viewGallery').hidden = which !== 'gallery';
   $('viewEditor').hidden = which !== 'editor';
+  $('viewTryon').hidden = which !== 'tryon';
 }
 
 async function closeEditor(){
@@ -416,6 +418,150 @@ function confirmDelete(d){
   );
 }
 
+
+/* ================= Anprobe ================= */
+
+let tryon = null;
+let tryonUrls = [];
+
+function ensureTryon(){
+  if(tryon) return tryon;
+  tryon = new TryOn($('tryonCanvas'));
+  tryon.onChange = () => renderNailChips();
+  return tryon;
+}
+
+function tryonStatus(text){
+  const el = $('tryonStatus');
+  if(!text){ el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = text;
+}
+
+async function openTryon(){
+  const t = ensureTryon();
+  const designs = await listDesigns();
+  if(!designs.length){
+    toast('Zeichne zuerst einen Entwurf – den kannst du dann anprobieren');
+    return;
+  }
+  t.setDesigns(designs);
+  showView('tryon');
+  renderDesignStrip(designs);
+  renderNailChips();
+  requestAnimationFrame(() => t.render());
+}
+
+async function loadPhoto(file){
+  const t = ensureTryon();
+  const url = URL.createObjectURL(file);
+  tryonUrls.push(url);
+  try{
+    const img = await loadImage(url);
+    await t.setPhoto(img);
+    $('tryonEmpty').hidden = true;
+    $('tryonBar').hidden = false;
+    $('btnTryonShare').disabled = false;
+    await runDetection();
+  }catch(err){
+    toast('Foto konnte nicht geladen werden');
+  }
+}
+
+async function runDetection(){
+  const t = ensureTryon();
+  try{
+    tryonStatus('Erkennung wird vorbereitet …');
+    const res = await t.detect(tryonStatus);
+    tryonStatus(null);
+    if(!res.nails){
+      toast('Keine Hand erkannt – setze die Nägel von Hand');
+      return;
+    }
+    // Zuletzt geänderten Entwurf gleich auflegen, damit sofort etwas zu sehen ist
+    const designs = await listDesigns();
+    if(designs.length) await t.assignAll(designs[0].id);
+    renderNailChips();
+    renderDesignStrip(designs);
+    toast(res.hands + (res.hands === 1 ? ' Hand' : ' Hände') + ' erkannt · ' + res.nails + ' Nägel');
+  }catch(err){
+    tryonStatus(null);
+    toast('Erkennung fehlgeschlagen: ' + (err.message || 'unbekannter Fehler'));
+  }
+}
+
+function renderNailChips(){
+  const box = $('nailChips');
+  if(!tryon) return;
+  box.innerHTML = '';
+  const mehrereHaende = new Set(tryon.nails.map(n => n.hand)).size > 1;
+  tryon.nails.forEach(n => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'nail-chip' + (n.id === tryon.selected ? ' is-active' : '') + (n.visible ? '' : ' is-off');
+    b.textContent = n.name;
+    if(mehrereHaende && n.handName){
+      const tag = document.createElement('span');
+      tag.className = 'hand-tag';
+      tag.textContent = n.handName;
+      b.appendChild(tag);
+    }
+    b.addEventListener('click', () => { tryon.select(n.id); renderNailChips(); });
+    box.appendChild(b);
+  });
+  const sel = tryon.selectedNail;
+  $('btnNailHide').textContent = sel && !sel.visible ? 'Einblenden' : 'Ausblenden';
+  $('btnManualNails').textContent = tryon.nails.length ? 'Nagel hinzufügen' : 'Von Hand setzen';
+}
+
+function renderDesignStrip(designs){
+  const box = $('designStrip');
+  box.querySelectorAll('img').forEach(img => releaseUrl(img.src));
+  box.innerHTML = '';
+  const sel = tryon ? tryon.selectedNail : null;
+  designs.forEach(d => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'design-tile' + (sel && sel.designId === d.id ? ' is-active' : '');
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = d.thumb ? imageToUrl(d.thumb) : placeholderThumb(d.shape);
+    const name = document.createElement('span');
+    name.textContent = d.name || 'Ohne Namen';
+    b.append(img, name);
+    b.addEventListener('click', async () => {
+      if(!tryon.selected){ toast('Wähle zuerst einen Nagel'); return; }
+      await tryon.assign(tryon.selected, d.id);
+      renderDesignStrip(designs);
+      renderNailChips();
+    });
+    box.appendChild(b);
+  });
+}
+
+async function shareTryon(){
+  if(!tryon || !tryon.photo) return;
+  tryonStatus('Bild wird erzeugt …');
+  const canvas = tryon.exportImage();
+  canvas.toBlob(async (blob) => {
+    tryonStatus(null);
+    if(!blob){ toast('Bild konnte nicht erzeugt werden'); return; }
+    const d = new Date();
+    const stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0')
+                + '-' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0');
+    const res = await shareBlob('anprobe-' + stamp + '.jpg', blob);
+    if(res === 'gespeichert') toast('Bild gespeichert');
+    else if(res === 'geteilt') toast('Geteilt');
+  }, 'image/jpeg', 0.92);
+}
+
+function closeTryon(){
+  tryonUrls.forEach(releaseUrl);
+  tryonUrls = [];
+  showView('gallery');
+  renderGallery();
+}
+
 /* ================= Start ================= */
 
 function wire(){
@@ -490,6 +636,44 @@ function wire(){
     });
   });
 
+
+  // Anprobe
+  $('btnTryon').addEventListener('click', openTryon);
+  $('btnTryonBack').addEventListener('click', closeTryon);
+  $('btnPhotoLibrary').addEventListener('click', () => $('filePhoto').click());
+  $('btnPhotoLibrary2').addEventListener('click', () => $('filePhoto').click());
+  $('btnPhotoCamera').addEventListener('click', () => $('filePhotoCam').click());
+  $('btnPhotoCamera2').addEventListener('click', () => $('filePhotoCam').click());
+  ['filePhoto', 'filePhotoCam'].forEach(id => {
+    $(id).addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if(f) loadPhoto(f);
+    });
+  });
+  $('btnRedetect').addEventListener('click', runDetection);
+  $('btnManualNails').addEventListener('click', () => {
+    const n = ensureTryon().addManualNails();
+    renderNailChips();
+    toast(n === 1 ? 'Nagel hinzugefügt – zieh ihn auf den Finger'
+                  : 'Fünf Nägel gesetzt – zieh sie auf die Finger');
+  });
+  $('btnApplyAll').addEventListener('click', async () => {
+    const sel = tryon && tryon.selectedNail;
+    if(!sel || !sel.designId){ toast('Weise erst einem Nagel einen Entwurf zu'); return; }
+    await tryon.assignAll(sel.designId);
+    renderNailChips();
+    toast('Auf alle Nägel übertragen');
+  });
+  $('btnNailHide').addEventListener('click', () => {
+    if(!tryon) return;
+    tryon.toggleVisible();
+    renderNailChips();
+  });
+  $('tryonOpacity').addEventListener('input', (e) => ensureTryon().setOpacity(Number(e.target.value) / 100));
+  $('glossToggle').addEventListener('change', (e) => ensureTryon().setGloss(e.target.checked));
+  $('btnTryonShare').addEventListener('click', shareTryon);
+
   // Modal
   $('modalCancel').addEventListener('click', closeModal);
   $('modalOk').addEventListener('click', () => { const fn = modalAction; closeModal(); if(fn) fn(); });
@@ -506,6 +690,7 @@ function wire(){
     if(e.key === 'Escape'){
       if(!$('modal').hidden) closeModal();
       else if(!$('viewEditor').hidden) closeEditor();
+      else if(!$('viewTryon').hidden) closeTryon();
     }
   });
 

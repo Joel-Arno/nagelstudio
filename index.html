@@ -22,6 +22,7 @@
   <header class="bar">
     <h1 class="logo">Nagelstudio</h1>
     <div class="bar-actions">
+      <button class="btn ghost" id="btnTryon" type="button">Anprobe</button>
       <button class="btn ghost" id="btnImport" type="button">Empfangen</button>
       <button class="btn ghost" id="btnShareAll" type="button">Sichern</button>
       <button class="btn primary" id="btnNew" type="button">Neuer Entwurf</button>
@@ -132,6 +133,48 @@
   </div>
 </section>
 
+
+<!-- ============ Anprobe ============ -->
+<section class="view view-tryon" id="viewTryon" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="btnTryonBack" type="button" aria-label="Zurück zur Übersicht">‹</button>
+    <h2 class="logo">Anprobe</h2>
+    <div class="bar-actions">
+      <button class="btn ghost" id="btnPhotoLibrary" type="button">Foto wählen</button>
+      <button class="btn ghost" id="btnPhotoCamera" type="button">Kamera</button>
+      <button class="btn primary" id="btnTryonShare" type="button" disabled>Teilen</button>
+    </div>
+  </header>
+
+  <div class="tryon-stage">
+    <canvas id="tryonCanvas"></canvas>
+    <div class="tryon-empty" id="tryonEmpty">
+      <h3>Hand fotografieren</h3>
+      <p>Hand flach halten, Finger leicht gespreizt, gutes Licht. Die Nägel werden erkannt und lassen sich danach von Hand nachziehen.</p>
+      <div class="row" style="justify-content:center">
+        <button class="btn primary" id="btnPhotoCamera2" type="button">Foto aufnehmen</button>
+        <button class="btn" id="btnPhotoLibrary2" type="button">Aus Fotos wählen</button>
+      </div>
+    </div>
+    <p class="tryon-status" id="tryonStatus" hidden></p>
+  </div>
+
+  <div class="tryon-bar" id="tryonBar" hidden>
+    <div class="nail-chips" id="nailChips"></div>
+    <div class="design-strip" id="designStrip"></div>
+    <div class="tryon-actions">
+      <button class="btn ghost" id="btnApplyAll" type="button">Auf alle Nägel</button>
+      <button class="btn ghost" id="btnNailHide" type="button">Ausblenden</button>
+      <button class="btn ghost" id="btnRedetect" type="button">Neu erkennen</button>
+      <button class="btn ghost" id="btnManualNails" type="button">Von Hand setzen</button>
+      <label class="check"><input type="checkbox" id="glossToggle" checked> Glanz</label>
+      <label class="slider-inline">Deckkraft <input type="range" id="tryonOpacity" min="20" max="100" value="100"></label>
+    </div>
+  </div>
+</section>
+
+<input type="file" id="filePhoto" accept="image/*" hidden>
+<input type="file" id="filePhotoCam" accept="image/*" capture="environment" hidden>
 <input type="file" id="fileImport" accept="application/json,.json" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

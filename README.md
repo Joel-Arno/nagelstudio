@@ -16,11 +16,31 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 * Austausch per Datei — auf dem iPad/iPhone über das Teilen-Menü, also auch per AirDrop
 * Läuft offline, lässt sich auf den Home-Bildschirm legen
 
+**Fertig — Stufe 2: Anprobe**
+
+* Foto der Hand aufnehmen oder aus den Fotos wählen
+* Handerkennung im Browser (MediaPipe Hand Landmarker), Bibliothek und Modell
+  liegen im Projekt — kein fremdes CDN, funktioniert offline
+* Nagelflächen werden aus dem letzten Fingerglied geschätzt und mit dem
+  Design belegt; einzeln oder auf alle Nägel zugleich
+* Jeder Nagel lässt sich verschieben, drehen, in Länge und Breite ändern und
+  ausblenden; fehlende Nägel lassen sich von Hand ergänzen
+* Licht und Schatten der Hand scheinen durch das Design, dazu ein Glanz —
+  sonst wirkt der Nagel wie aufgeklebt
+* Ergebnis als Bild teilen oder sichern
+
 **Geplant**
 
-* Stufe 2: Foto einer Hand aufnehmen, Nägel automatisch erkennen, Design auflegen, mit dem Pencil nachjustieren
 * Stufe 3: dasselbe live im Kamerabild
 * Optional: automatischer Abgleich über eine Cloud statt AirDrop
+
+**Grenzen der Erkennung**
+
+Die Erkennung findet Fingergelenke, keine Nägel — die Nagelfläche wird daraus
+abgeleitet. Das sitzt gut, solange die Hand halbwegs flach zur Kamera steht.
+Bei stark angewinkelten oder eingerollten Fingern wird es ungenau, und ob man
+Handfläche oder Handrücken sieht, erkennt die App nicht zuverlässig. Deshalb
+ist jeder Nagel von Hand nachziehbar und einzeln ausblendbar.
 
 ## Ins Netz stellen
 
@@ -55,7 +75,12 @@ zum Beispiel `npx http-server -p 8080`, und dann
 | `js/draw.js` | Zeichen-Engine: Ebenen, Werkzeuge, Druckstärke, Verlauf, Darstellung |
 | `js/store.js` | IndexedDB, Datenmodell, Export, Import, Zusammenführen |
 | `js/app.js` | Oberfläche: Galerie, Editor, Speichern |
+| `js/handdetect.js` | Handerkennung und daraus abgeleitete Nagelflächen |
+| `js/tryon.js` | Anprobe: Foto, Nägel justieren, Designs auflegen |
+| `js/warp.js` | Ein Design auf eine Nagelfläche verzerren |
+| `js/compose.js` | Ein gespeichertes Design zu einem Bild zusammensetzen |
 | `sw.js` | Offline-Betrieb |
+| `vendor/`, `models/` | Erkennungsbibliothek und Modell (rund 27 MB) |
 
 Jeder Entwurf trägt eine eindeutige ID und eine Änderungszeit, gelöschte Entwürfe
 bleiben als Markierung erhalten. Ein späterer Cloud-Abgleich braucht deshalb keine
@@ -63,4 +88,8 @@ Umbauten am Datenmodell — `mergeDesigns()` in `store.js` ist bereits die volls
 Zusammenführ-Logik, sie bekommt ihre Daten dann vom Server statt aus einer Datei.
 
 Gezeichnet wird immer in die normierte Nagelform, nicht in ein beliebiges Bild.
-Dadurch lässt sich dasselbe Design später auf jeden erkannten Nagel legen.
+Dadurch lässt sich dasselbe Design auf jeden erkannten Nagel legen.
+
+Bibliothek und Modell der Erkennung werden erst beim ersten Öffnen der Anprobe
+geladen (rund 17 MB) und danach im Cache gehalten. Der erste Start der App
+bleibt dadurch leicht.
