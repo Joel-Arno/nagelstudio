@@ -8,6 +8,7 @@
 
 import { SHAPE_W, SHAPE_H, shapePath } from './shapes.js';
 import { NATURAL } from './store.js';
+import { applyPattern, drawStamp } from './patterns.js';
 
 export const RES = 6;                 // Skalierung des normierten Systems
 export const IMG_W = SHAPE_W * RES;   // 600
@@ -34,7 +35,9 @@ export class NailEditor {
     this.layers = [];          // { id, name, visible, opacity, canvas, ctx }
     this.activeLayerId = null;
 
-    this.tool = 'brush';       // brush | liner | glitter | eraser
+    this.tool = 'brush';       // brush | liner | glitter | eraser | stamp
+    this.stamp = 'herz';
+    this.color2 = '#FFFFFF';
     this.color = '#D8456B';
     this.size = 26;
     this.opacity = 1;
@@ -139,6 +142,19 @@ export class NailEditor {
     this._invalidate('draw');
   }
 
+  /** Eine Vorlage auf die aktive Ebene legen. */
+  usePattern(id, options){
+    const l = this.activeLayer;
+    if(!l) return;
+    this._pushUndo(l, 0, 0, IMG_W, IMG_H);
+    l.ctx.save();
+    l.ctx.globalAlpha = this.opacity;
+    applyPattern(l.ctx, id, Object.assign({ color: this.color, color2: this.color2 }, options));
+    l.ctx.restore();
+    this._invalidate('draw');
+    this._changed('pattern');
+  }
+
   fillLayer(id){
     const l = this.layers.find(x => x.id === (id || this.activeLayerId));
     if(!l) return;
@@ -169,6 +185,8 @@ export class NailEditor {
 
   setTool(t){ this.tool = t; }
   setColor(c){ this.color = c; }
+  setColor2(c){ this.color2 = c; }
+  setStamp(id){ this.stamp = id; this.tool = 'stamp'; }
   setSize(s){ this.size = s; }
   setOpacity(o){ this.opacity = Math.min(1, Math.max(0.02, o)); }
   setPressure(on){ this.usePressure = !!on; }
@@ -258,7 +276,9 @@ export class NailEditor {
     const w = this._widthFor(p.pressure);
     d.maxWidth = Math.max(d.maxWidth, w);
 
-    if(this.tool === 'glitter'){
+    if(this.tool === 'stamp'){
+      // ein Stempel je Tipp, nicht bei jeder Bewegung
+    }else if(this.tool === 'glitter'){
       this._glitter(d.last, p, w);
     }else{
       this.strokeCtx.lineWidth = w;
@@ -278,6 +298,10 @@ export class NailEditor {
 
   _dab(p){
     const w = this._widthFor(p.pressure);
+    if(this.tool === 'stamp'){
+      drawStamp(this.strokeCtx, this.stamp, p.x, p.y, Math.max(12, w * 3.2), this.color);
+      return;
+    }
     if(this.tool === 'glitter'){ this._glitter(p, p, w); return; }
     this.strokeCtx.beginPath();
     this.strokeCtx.arc(p.x, p.y, w / 2, 0, Math.PI * 2);

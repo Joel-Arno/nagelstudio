@@ -12,6 +12,7 @@ import {
   FINGER_KEYS, FINGER_NAMES, NATURAL
 } from './store.js';
 import { designTexture, setThumbnail, forgetTextures, SET_LAYOUT } from './compose.js';
+import { PATTERNS, STAMPS, applyPattern, drawStamp } from './patterns.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -29,6 +30,8 @@ let currentFinger = 'mittelfinger';
 let saveTimer = null;
 let dirty = false;
 let recent = loadRecent();
+let suchText = '';
+let nurFavoriten = false;
 
 /* ================= Galerie ================= */
 
@@ -40,12 +43,34 @@ function formatDate(ts){
   return d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit' });
 }
 
+function passtZurSuche(d){
+  if(nurFavoriten && !d.favorit) return false;
+  if(!suchText) return true;
+  const heu = [d.name, d.notiz, ...(d.schlagworte || [])].join(' ').toLowerCase();
+  return suchText.split(/\s+/).every(w => heu.includes(w));
+}
+
 async function renderGallery(){
-  const designs = await listDesigns();
+  const alle = await listDesigns();
+  const designs = alle.filter(passtZurSuche);
   const grid = $('galleryGrid');
   grid.querySelectorAll('img').forEach(img => releaseUrl(img.src));
   grid.innerHTML = '';
-  $('emptyGallery').hidden = designs.length > 0;
+  $('emptyGallery').hidden = designs.length > 0 || alle.length > 0;
+  const nichtsGefunden = alle.length > 0 && designs.length === 0;
+  let hinweis = document.getElementById('keinTreffer');
+  if(nichtsGefunden){
+    if(!hinweis){
+      hinweis = document.createElement('p');
+      hinweis.id = 'keinTreffer';
+      hinweis.className = 'empty';
+      grid.after(hinweis);
+    }
+    hinweis.textContent = 'Nichts gefunden zu „' + (suchText || 'Favoriten') + '“.';
+    hinweis.hidden = false;
+  }else if(hinweis){
+    hinweis.hidden = true;
+  }
 
   for(const d of designs){
     const card = document.createElement('article');
@@ -73,6 +98,26 @@ async function renderGallery(){
                      + ' · ' + formatDate(d.updatedAt);
     meta.append(name, date);
 
+    if(d.favorit){
+      const stern = document.createElement('span');
+      stern.className = 'card-fav';
+      stern.textContent = '★';
+      stern.setAttribute('aria-label', 'Favorit');
+      card.appendChild(stern);
+    }
+
+    let tags = null;
+    if((d.schlagworte || []).length){
+      tags = document.createElement('div');
+      tags.className = 'card-tags';
+      d.schlagworte.slice(0, 3).forEach(t => {
+        const tag = document.createElement('span');
+        tag.className = 'card-tag';
+        tag.textContent = t;
+        tags.appendChild(tag);
+      });
+    }
+
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     actions.append(
@@ -81,7 +126,9 @@ async function renderGallery(){
       actionBtn('Löschen', () => confirmDelete(d), 'del')
     );
 
-    card.append(preview, meta, actions);
+    card.append(preview, meta);
+    if(tags) card.appendChild(tags);
+    card.appendChild(actions);
     grid.appendChild(card);
   }
 
@@ -128,6 +175,10 @@ async function openDesign(id){
   if(!design) return;
   current = design;
   $('designName').value = design.name || '';
+  $('notiz').value = design.notiz || '';
+  $('schlagworte').value = (design.schlagworte || []).join(', ');
+  $('btnFavorit').setAttribute('aria-pressed', String(!!design.favorit));
+  $('btnFavorit').textContent = design.favorit ? '★' : '☆';
   await showSet();
 }
 
@@ -161,6 +212,7 @@ async function renderSet(){
     canvas.getContext('2d').drawImage(tex, 0, 0, canvas.width, canvas.height);
 
     canvas.style.transform = 'rotate(' + tilt.toFixed(3) + 'rad)';
+    card.style.marginBottom = Math.round(nailW * (SET_LAYOUT[SET_LAYOUT.findIndex(x => x.key === key)].lift || 0) * 1.4) + 'px';
 
     const label = document.createElement('span');
     label.textContent = FINGER_NAMES[key];
@@ -233,6 +285,10 @@ async function newDesign(){
   current = d;
   currentFinger = 'mittelfinger';
   $('designName').value = '';
+  $('notiz').value = '';
+  $('schlagworte').value = '';
+  $('btnFavorit').setAttribute('aria-pressed', 'false');
+  $('btnFavorit').textContent = '☆';
   await showSet();
 }
 
@@ -283,6 +339,7 @@ async function closeSet(){
 }
 
 function isSetEmpty(design){
+  if(design.notiz || (design.schlagworte || []).length) return false;
   return FINGER_KEYS.every(k => isNailEmpty(design.nails[k]));
 }
 
@@ -311,6 +368,9 @@ async function saveNow(){
   if(!current) return;
   if(editor && $('viewEditor').hidden === false) await stashNail();
   current.name = $('designName').value.trim();
+  current.notiz = $('notiz').value.trim();
+  current.schlagworte = $('schlagworte').value
+    .split(',').map(t => t.trim()).filter(Boolean).slice(0, 12);
   current.updatedAt = Date.now();
   forgetTextures();
   current.thumb = await canvasToImage(await setThumbnail(current));
@@ -377,6 +437,108 @@ function layerThumb(l){
   return c.toDataURL('image/png');
 }
 
+
+/* ---------- Muster und Stempel ---------- */
+
+let patternStrength = 0.5;
+
+function buildPatterns(){
+  const box = $('patternGrid');
+  box.innerHTML = '';
+  PATTERNS.forEach(pat => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pattern-item';
+    b.title = pat.name;
+
+    const c = document.createElement('canvas');
+    c.width = 60; c.height = 84;
+    b.appendChild(c);
+
+    const label = document.createElement('span');
+    label.textContent = pat.name;
+    b.appendChild(label);
+
+    b.addEventListener('click', () => {
+      ensureEditor().usePattern(pat.id, { strength: patternStrength });
+      refreshLayerList();
+      dirty = true; scheduleSave();
+      toast(pat.name + ' aufgelegt');
+    });
+    box.appendChild(b);
+    drawPatternPreview(c, pat);
+  });
+}
+
+/** Kleine Vorschau je Muster, in den gerade gewählten Farben. */
+function drawPatternPreview(canvas, pat){
+  const tmp = document.createElement('canvas');
+  tmp.width = IMG_W; tmp.height = IMG_H;
+  const tctx = tmp.getContext('2d');
+  tctx.fillStyle = '#F3E6E2';
+  tctx.fillRect(0, 0, IMG_W, IMG_H);
+  applyPattern(tctx, pat.id, {
+    color: editor ? editor.color : '#D8456B',
+    color2: $('color2') ? $('color2').value : '#FFFFFF',
+    strength: patternStrength
+  });
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.beginPath();
+  const r = 7;
+  ctx.moveTo(r, 0); ctx.lineTo(canvas.width - r, 0);
+  ctx.quadraticCurveTo(canvas.width, 0, canvas.width, r);
+  ctx.lineTo(canvas.width, canvas.height - 3);
+  ctx.quadraticCurveTo(canvas.width / 2, canvas.height + 4, 0, canvas.height - 3);
+  ctx.lineTo(0, r);
+  ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.clip();
+  ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
+function refreshPatternPreviews(){
+  const items = $('patternGrid').querySelectorAll('.pattern-item canvas');
+  PATTERNS.forEach((pat, i) => { if(items[i]) drawPatternPreview(items[i], pat); });
+}
+
+function buildStamps(){
+  const row = $('stampRow');
+  row.innerHTML = '';
+  STAMPS.forEach(st => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'stamp-item';
+    b.title = st.name;
+    b.setAttribute('aria-label', 'Stempel ' + st.name);
+
+    const c = document.createElement('canvas');
+    c.width = 60; c.height = 60;
+    const ctx = c.getContext('2d');
+    drawStamp(ctx, st.id, 30, 30, 52, editor ? editor.color : '#D8456B');
+    b.appendChild(c);
+
+    b.addEventListener('click', () => {
+      ensureEditor().setStamp(st.id);
+      selectTool('stamp');
+      document.querySelectorAll('.stamp-item').forEach(x => x.classList.toggle('is-active', x === b));
+      toast(st.name + ' gewählt – tippe auf den Nagel');
+    });
+    row.appendChild(b);
+  });
+}
+
+function refreshStampPreviews(){
+  const items = $('stampRow').querySelectorAll('.stamp-item canvas');
+  STAMPS.forEach((st, i) => {
+    if(!items[i]) return;
+    const ctx = items[i].getContext('2d');
+    ctx.clearRect(0, 0, 60, 60);
+    drawStamp(ctx, st.id, 30, 30, 52, editor ? editor.color : '#D8456B');
+  });
+}
+
 /* ---------- Formen ---------- */
 
 function buildShapeList(){
@@ -433,10 +595,46 @@ function buildPalette(){
   });
 }
 
+function buildColorBar(){
+  const bar = $('colorBar');
+  if(!bar) return;
+  bar.innerHTML = '';
+
+  const aktuell = document.createElement('span');
+  aktuell.className = 'aktuell';
+  aktuell.style.background = editor ? editor.color : PALETTE[0];
+  aktuell.title = 'aktuelle Farbe';
+  bar.appendChild(aktuell);
+
+  // die zuletzt benutzten Farben, sonst die Anfangsauswahl
+  const schnell = [...new Set([...recent, ...PALETTE])].slice(0, 6);
+  schnell.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'quick';
+    b.style.background = c;
+    b.title = c;
+    b.setAttribute('aria-label', 'Farbe ' + c);
+    b.addEventListener('click', () => { setColor(c); buildPalette(); });
+    bar.appendChild(b);
+  });
+
+  const picker = document.createElement('input');
+  picker.type = 'color';
+  picker.value = editor ? editor.color : PALETTE[0];
+  picker.setAttribute('aria-label', 'eigene Farbe');
+  picker.addEventListener('input', (e) => setColor(e.target.value));
+  picker.addEventListener('change', (e) => rememberColor(e.target.value));
+  bar.appendChild(picker);
+}
+
 function setColor(c){
   ensureEditor().setColor(c);
   $('colorPicker').value = c;
   if(editor.tool === 'eraser') selectTool('brush');
+  refreshPatternPreviews();
+  refreshStampPreviews();
+  buildColorBar();
 }
 
 /* ---------- Werkzeuge ---------- */
@@ -702,6 +900,18 @@ function wire(){
   $('colorPicker').addEventListener('input', (e) => setColor(e.target.value));
   $('colorPicker').addEventListener('change', (e) => rememberColor(e.target.value));
 
+
+  // Muster und Stempel
+  $('patternStrength').addEventListener('input', (e) => {
+    patternStrength = Number(e.target.value) / 100;
+    $('patternStrengthOut').textContent = e.target.value + '%';
+    refreshPatternPreviews();
+  });
+  $('color2').addEventListener('input', (e) => {
+    ensureEditor().setColor2(e.target.value);
+    refreshPatternPreviews();
+  });
+
   $('btnAddLayer').addEventListener('click', () => {
     ensureEditor().addLayer();
     refreshLayerList();
@@ -716,9 +926,10 @@ function wire(){
     t.addEventListener('click', () => {
       // Auf schmalen Bildschirmen zaehlt jeder Pixel: nochmal auf den
       // aktiven Reiter tippen klappt das Panel weg und gibt der
-      // Zeichenflaeche den Platz.
+      // Zeichenflaeche den Platz. Auf grossen Bildschirmen gibt es den
+      // Platz ohnehin -- dort waere das nur ein Klick, der nichts tut.
       if(t.classList.contains('is-active')){
-        $('panel').classList.toggle('collapsed');
+        if(window.innerWidth <= 820) $('panel').classList.toggle('collapsed');
         return;
       }
       $('panel').classList.remove('collapsed');
@@ -733,6 +944,27 @@ function wire(){
   });
 
 
+
+
+  // Suchen, Favoriten, Notizen
+  $('suche').addEventListener('input', (e) => {
+    suchText = e.target.value.trim().toLowerCase();
+    renderGallery();
+  });
+  $('btnNurFavoriten').addEventListener('click', (e) => {
+    nurFavoriten = !nurFavoriten;
+    e.currentTarget.setAttribute('aria-pressed', String(nurFavoriten));
+    renderGallery();
+  });
+  $('btnFavorit').addEventListener('click', (e) => {
+    if(!current) return;
+    current.favorit = !current.favorit;
+    e.currentTarget.setAttribute('aria-pressed', String(current.favorit));
+    e.currentTarget.textContent = current.favorit ? '★' : '☆';
+    dirty = true; scheduleSave();
+  });
+  $('notiz').addEventListener('input', () => { dirty = true; scheduleSave(); });
+  $('schlagworte').addEventListener('input', () => { dirty = true; scheduleSave(); });
 
   // Satz-Übersicht
   $('btnSetBack').addEventListener('click', closeSet);
@@ -864,6 +1096,9 @@ async function init(){
   wire();
   buildShapeList();
   ensureEditor();
+  buildPatterns();
+  buildStamps();
+  buildColorBar();
   buildPalette();
   setColor(PALETTE[0]);
   await renderGallery();

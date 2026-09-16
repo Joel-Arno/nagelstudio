@@ -10,6 +10,7 @@
 import { detectNails, loadDetector, FINGERS } from './handdetect.js';
 import { drawQuad, quadContains, quadBounds } from './warp.js';
 import { designTexture } from './compose.js';
+import { refineNail } from './nailfit.js';
 
 const HANDLE_R = 11;      // Radius der Griffe in Bildschirmpixeln
 const HANDLE_OFF = 17;    // Abstand der Griffe vom Nagelrand
@@ -112,21 +113,31 @@ export class TryOn {
     const hands = await detectNails(this.photo, this.photo.naturalWidth, this.photo.naturalHeight);
     hands.sort((a, b) => a.mittelX - b.mittelX);
 
+    if(onStatus) onStatus('Nägel werden vermessen …');
+
     const nails = [];
     hands.forEach((hand, hi) => {
       const handName = hands.length < 2 ? '' : (hi === 0 ? 'links im Bild' : 'rechts im Bild');
       hand.nails.forEach(n => {
+        // Schaetzung aus den Gelenken, danach im Bild nachgemessen
+        const grob = boxFromQuad(n.quad);
+        const fein = refineNail(this.photo, grob);
         nails.push(Object.assign(
           { id: 'n' + hi + '-' + n.finger, hand: hi, handName, name: n.name,
-            finger: n.finger, visible: true, designId: null },
-          boxFromQuad(n.quad)
+            finger: n.finger, visible: true, designId: null,
+            confidence: fein.confidence, source: fein.source },
+          { cx: fein.cx, cy: fein.cy, angle: fein.angle, w: fein.w, h: fein.h }
         ));
       });
     });
     this.nails = nails;
     this.selected = nails.length ? nails[0].id : null;
     this._invalidate();
-    return { hands: hands.length, nails: nails.length };
+    return {
+      hands: hands.length,
+      nails: nails.length,
+      gemessen: nails.filter(n => n.source === 'nagelrand').length
+    };
   }
 
   /**

@@ -56,30 +56,35 @@ export function forgetTextures(){ cache.clear(); }
 
 /** Relative Groesse und Neigung der fuenf Naegel in der Uebersicht. */
 export const SET_LAYOUT = [
-  { key:'daumen',       scale:0.86, tilt:-0.30 },
-  { key:'zeigefinger',  scale:0.97, tilt:-0.10 },
-  { key:'mittelfinger', scale:1.00, tilt: 0.00 },
-  { key:'ringfinger',   scale:0.95, tilt: 0.10 },
-  { key:'kleiner',      scale:0.80, tilt: 0.26 }
+  { key:'daumen',       scale:0.86, tilt:-0.34, lift:0.30 },
+  { key:'zeigefinger',  scale:0.97, tilt:-0.11, lift:0.05 },
+  { key:'mittelfinger', scale:1.00, tilt: 0.00, lift:0.00 },
+  { key:'ringfinger',   scale:0.95, tilt: 0.11, lift:0.04 },
+  { key:'kleiner',      scale:0.80, tilt: 0.28, lift:0.22 }
 ];
 
 /** Vorschaubild eines ganzen Satzes: die fuenf Naegel nebeneinander. */
-export async function setThumbnail(design, nailWidth = 62){
-  const gap = Math.round(nailWidth * 0.22);
+/**
+ * Vorschaubild eines Satzes: die fuenf Naegel auf einem Bogen, wie die
+ * Fingerspitzen einer Hand -- das liest sich auf einer Kachel besser als
+ * eine flache Reihe.
+ */
+export async function setThumbnail(design, nailWidth = 84){
+  const gap = Math.round(nailWidth * 0.14);
   const nailHeight = nailWidth * IMG_H / IMG_W;
-  const width = Math.round(SET_LAYOUT.length * nailWidth + (SET_LAYOUT.length - 1) * gap + nailWidth * 0.5);
-  const height = Math.round(nailHeight * 1.18);
+  const width = Math.round(SET_LAYOUT.length * nailWidth + (SET_LAYOUT.length - 1) * gap + nailWidth * 0.55);
+  const height = Math.round(nailHeight * 1.62);
 
   const canvas = document.createElement('canvas');
   canvas.width = width; canvas.height = height;
   const ctx = canvas.getContext('2d');
 
   for(let i = 0; i < SET_LAYOUT.length; i++){
-    const { key, scale, tilt } = SET_LAYOUT[i];
+    const { key, scale, tilt, lift } = SET_LAYOUT[i];
     const tex = await designTexture(design, key);
     const w = nailWidth * scale, h = nailHeight * scale;
-    const cx = nailWidth * 0.25 + i * (nailWidth + gap) + nailWidth / 2;
-    const cy = height - h / 2 - height * 0.06;
+    const cx = nailWidth * 0.3 + i * (nailWidth + gap) + nailWidth / 2;
+    const cy = height - h / 2 - height * 0.05 - nailHeight * lift;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(tilt);

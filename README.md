@@ -13,10 +13,17 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 * Jeder Nagel hat eine deckende Grundfarbe unter den Ebenen — unbemalte
   Stellen bleiben so, wie sie beim Malen aussehen, auch später auf der Hand
 * Zeichnen mit Apple Pencil inklusive Druckstärke; der Finger schiebt und zoomt das Bild
-* Werkzeuge: Pinsel, Liner, Glitzer, Radierer, Ebene füllen, Ebene leeren
+* Werkzeuge: Pinsel, Liner, Glitzer, Stempel, Radierer, Ebene füllen, Ebene leeren
+* Zehn Vorlagen (French, Halbmond, Verlauf, Diagonal, Spitze, Punkte, Streifen,
+  Glitzerfall, Marmor, Rand) mit einstellbarer Stärke und zweiter Farbe; sie
+  legen sich auf die aktive Ebene und bleiben frei weiter bemalbar
+* Stempel: Herz, Stern, Blüte, Punkt, Schleife
+* Farbe und Größe liegen über allen Reitern und sind immer erreichbar
 * Ebenen mit Sichtbarkeit, Reihenfolge und Deckkraft
 * Acht Nagelformen (Oval, Rund, Squoval, Quadrat, Mandel, Sarg, Ballerina, Stiletto)
 * Rückgängig und Wiederholen (24 Schritte)
+* Notiz je Entwurf (Kundin, verwendete Lacke, Anlass), Schlagworte und
+  Favoriten; die Galerie durchsucht Name, Notiz und Schlagworte
 * Automatisches Speichern in der Geräte-Datenbank (IndexedDB)
 * Austausch per Datei — auf dem iPad/iPhone über das Teilen-Menü, also auch per AirDrop
 * Läuft offline, lässt sich auf den Home-Bildschirm legen
@@ -26,8 +33,11 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 * Foto der Hand aufnehmen oder aus den Fotos wählen
 * Handerkennung im Browser (MediaPipe Hand Landmarker), Bibliothek und Modell
   liegen im Projekt — kein fremdes CDN, funktioniert offline
-* Nagelflächen werden aus dem letzten Fingerglied geschätzt und mit dem
-  Design belegt; einzeln oder auf alle Nägel zugleich
+* Nagelflächen werden aus dem letzten Fingerglied geschätzt und anschließend
+  im Foto nachgemessen: Die Fingerkontur verrät die tatsächliche Breite des
+  Fingers, was die Gelenkpunkte nicht hergeben. Gemessen wird gegen eine
+  Farbprobe aus dem Finger selbst, also unabhängig vom Hautton
+* Designs werden aufgelegt, einzeln oder auf alle Nägel zugleich
 * Beim Auflegen bekommt jeder Finger seinen eigenen Nagel aus dem Satz
 * Zoomen und Schieben im Bild; jeder Nagel lässt sich ziehen, drehen, in Größe
   und Breite ändern und ausblenden — entweder mit Griffen oder mit Knöpfen,
@@ -47,10 +57,16 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 **Grenzen der Erkennung**
 
 Die Erkennung findet Fingergelenke, keine Nägel — die Nagelfläche wird daraus
-abgeleitet. Das sitzt gut, solange die Hand halbwegs flach zur Kamera steht.
-Bei stark angewinkelten oder eingerollten Fingern wird es ungenau, und ob man
-Handfläche oder Handrücken sieht, erkennt die App nicht zuverlässig. Deshalb
-ist jeder Nagel von Hand nachziehbar und einzeln ausblendbar.
+abgeleitet und im Bild nachgemessen. Das sitzt gut, solange die Hand halbwegs
+flach zur Kamera steht. Bei stark angewinkelten oder eingerollten Fingern wird
+es ungenau, und ob man Handfläche oder Handrücken sieht, erkennt die App nicht
+zuverlässig. Deshalb ist jeder Nagel von Hand nachziehbar und ausblendbar.
+
+Nachgemessen wird bewusst nur die Größe, nicht die Lage: Versuche, den
+Nagelrand im Bild zu finden und den Nagel danach zu verschieben, lagen in
+Tests mal zu hoch, mal zu tief und waren damit schlechter als die Schätzung
+aus den Gelenkpunkten. Die Fingerbreite dagegen lässt sich zuverlässig
+messen.
 
 ## Ins Netz stellen
 
@@ -86,6 +102,8 @@ zum Beispiel `npx http-server -p 8080`, und dann
 | `js/store.js` | IndexedDB, Datenmodell, Export, Import, Zusammenführen |
 | `js/app.js` | Oberfläche: Galerie, Editor, Speichern |
 | `js/handdetect.js` | Handerkennung und daraus abgeleitete Nagelflächen |
+| `js/nailfit.js` | Nagelgröße im Foto nachmessen |
+| `js/patterns.js` | Vorlagen und Stempel |
 | `js/tryon.js` | Anprobe: Foto, Nägel justieren, Designs auflegen |
 | `js/warp.js` | Ein Design auf eine Nagelfläche verzerren |
 | `js/compose.js` | Ein gespeichertes Design zu einem Bild zusammensetzen |

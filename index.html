@@ -29,6 +29,11 @@
     </div>
   </header>
 
+  <div class="gallery-tools">
+    <input type="search" id="suche" class="suchfeld" placeholder="Suchen: Name, Notiz, Schlagwort" aria-label="Entwürfe durchsuchen">
+    <button class="btn ghost" id="btnNurFavoriten" type="button" aria-pressed="false">★ Favoriten</button>
+  </div>
+
   <div class="gallery-scroll">
     <div class="gallery-grid" id="galleryGrid"></div>
 
@@ -49,12 +54,17 @@
     <button class="icon-btn" id="btnSetBack" type="button" aria-label="Zurück zur Übersicht">‹</button>
     <input class="name-field" id="designName" type="text" placeholder="Name des Entwurfs" maxlength="40" aria-label="Name des Entwurfs">
     <div class="bar-actions">
+      <button class="icon-btn" id="btnFavorit" type="button" aria-pressed="false" aria-label="Als Favorit merken">☆</button>
       <button class="btn ghost" id="btnSetTryon" type="button">Anprobieren</button>
     </div>
   </header>
   <div class="set-stage">
     <div class="nail-set" id="nailSet"></div>
     <p class="set-hint">Tippe einen Nagel an, um ihn zu bemalen. Die Nägel lassen sich einzeln gestalten – oder du überträgst einen fertigen auf alle anderen.</p>
+    <div class="notiz-box">
+      <textarea id="notiz" rows="2" placeholder="Notiz: Kundin, verwendete Lacke, Anlass …" aria-label="Notiz zum Entwurf"></textarea>
+      <input type="text" id="schlagworte" placeholder="Schlagworte, mit Komma getrennt" aria-label="Schlagworte">
+    </div>
   </div>
 </section>
 
@@ -88,6 +98,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 20h11M4.5 15.5l7-7a2 2 0 013 0l4 4a2 2 0 010 3L14 20H8z"/></svg>
         <span>Radierer</span>
       </button>
+      <button class="tool" data-tool="stamp" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L4.8 8.3l5-.7z"/></svg>
+        <span>Stempel</span>
+      </button>
       <div class="tool-sep"></div>
       <button class="tool" id="btnFill" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l7-7 7 7-7 7z"/><path d="M19 15c1.5 2 2 3 2 4a2 2 0 11-4 0c0-1 .5-2 2-4z"/></svg>
@@ -112,9 +126,17 @@
 
     <!-- Panel -->
     <aside class="panel" id="panel">
+      <div class="color-bar" id="colorBar" aria-label="Farbe"></div>
+      <div class="size-bar">
+        <label for="sizeRange" title="Größe von Pinsel und Stempel">Größe</label>
+        <input type="range" id="sizeRange" min="2" max="140" step="1" value="26">
+        <output id="sizeOut">26</output>
+      </div>
+      <button class="btn ghost full copy-all" id="btnCopyToAll" type="button">Diesen Nagel auf alle übertragen</button>
       <div class="tabs" role="tablist">
         <button class="tab is-active" data-tab="color" role="tab" aria-selected="true" aria-controls="panelColor" type="button">Farbe</button>
         <button class="tab" data-tab="layers" role="tab" aria-selected="false" aria-controls="panelLayers" type="button">Ebenen</button>
+        <button class="tab" data-tab="muster" role="tab" aria-selected="false" aria-controls="panelMuster" type="button">Muster</button>
         <button class="tab" data-tab="shape" role="tab" aria-selected="false" aria-controls="panelShape" type="button">Form</button>
       </div>
 
@@ -132,10 +154,6 @@
           </span>
         </div>
         <div class="field">
-          <div class="field-head"><label for="sizeRange">Größe</label><output id="sizeOut">26</output></div>
-          <input type="range" id="sizeRange" min="2" max="120" step="1" value="26">
-        </div>
-        <div class="field">
           <div class="field-head"><label for="opacityRange">Deckkraft</label><output id="opacityOut">100%</output></div>
           <input type="range" id="opacityRange" min="5" max="100" step="1" value="100">
         </div>
@@ -145,8 +163,24 @@
       <div class="tab-panel" id="panelLayers">
         <div class="layer-list" id="layerList"></div>
         <button class="btn ghost full" id="btnAddLayer" type="button">Ebene hinzufügen</button>
-        <button class="btn ghost full" id="btnCopyToAll" type="button">Diesen Nagel auf alle übertragen</button>
+
         <p class="hint">Grundfarbe unten, Verzierungen darüber. Ebenen lassen sich einzeln ausblenden — praktisch, um Varianten zu vergleichen.</p>
+      </div>
+
+      <div class="tab-panel" id="panelMuster">
+        <div class="pattern-grid" id="patternGrid"></div>
+        <div class="field">
+          <div class="field-head"><label for="patternStrength">Stärke</label><output id="patternStrengthOut">50%</output></div>
+          <input type="range" id="patternStrength" min="0" max="100" step="1" value="50">
+        </div>
+        <div class="field-row">
+          <label for="color2">Zweite Farbe</label>
+          <input type="color" id="color2" value="#FFFFFF">
+        </div>
+        <p class="hint">Muster legen sich auf die aktive Ebene – danach frei weiter bemalbar, und Rückgängig geht auch.</p>
+        <hr class="divider">
+        <p class="hint" style="margin-bottom:-6px">Stempel: antippen, dann auf den Nagel tippen.</p>
+        <div class="stamp-row" id="stampRow"></div>
       </div>
 
       <div class="tab-panel" id="panelShape">

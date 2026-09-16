@@ -75,6 +75,9 @@ export function emptyDesign(shape = 'mandel'){
     id: newId(),
     name: '',
     nails,
+    notiz: '',          // freie Notiz: Kundin, Lacke, Anlass
+    schlagworte: [],    // zum Wiederfinden
+    favorit: false,
     thumb: null,
     createdAt: now,
     updatedAt: now,
@@ -98,6 +101,9 @@ export function migrateDesign(d){
     };
   });
   d.nails = nails;
+  if(typeof d.notiz !== 'string') d.notiz = '';
+  if(!Array.isArray(d.schlagworte)) d.schlagworte = [];
+  d.favorit = !!d.favorit;
   delete d.layers;
   delete d.shape;
   return d;
@@ -214,6 +220,9 @@ function structuredCloneSafe(d){
     id: d.id,
     name: d.name,
     nails,
+    notiz: d.notiz || '',
+    schlagworte: Array.isArray(d.schlagworte) ? d.schlagworte : [],
+    favorit: !!d.favorit,
     thumb: d.thumb,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
@@ -244,6 +253,9 @@ export async function exportDesigns(designs){
       id: d.id,
       name: d.name,
       nails,
+      notiz: d.notiz || '',
+      schlagworte: d.schlagworte || [],
+      favorit: !!d.favorit,
       thumb: await imageToDataUrl(d.thumb),
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
@@ -306,6 +318,9 @@ export async function mergeDesigns(payload){
       id: raw.id,
       name: String(raw.name || ''),
       nails,
+      notiz: String(raw.notiz || ''),
+      schlagworte: Array.isArray(raw.schlagworte) ? raw.schlagworte.map(String).slice(0, 12) : [],
+      favorit: !!raw.favorit,
       thumb: dataUrlToBlob(raw.thumb),
       createdAt: Number(raw.createdAt) || Date.now(),
       updatedAt: Number(raw.updatedAt) || Date.now(),
