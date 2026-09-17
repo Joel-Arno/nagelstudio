@@ -722,11 +722,26 @@ function ensureTryon(){
   return tryon;
 }
 
-function tryonStatus(text){
+/** Statuszeile der Anprobe; nimmt Text oder { text, anteil } entgegen. */
+function tryonStatus(info){
   const el = $('tryonStatus');
-  if(!text){ el.hidden = true; return; }
+  if(!info){ el.hidden = true; el.innerHTML = ''; return; }
+  const text = typeof info === 'string' ? info : info.text;
+  const anteil = typeof info === 'object' ? info.anteil : null;
   el.hidden = false;
-  el.textContent = text;
+  if(anteil == null){
+    el.textContent = text;
+    return;
+  }
+  el.innerHTML = '';
+  const zeile = document.createElement('span');
+  zeile.textContent = text + ' ' + Math.round(anteil * 100) + '%';
+  const balken = document.createElement('span');
+  balken.className = 'balken';
+  const fuell = document.createElement('span');
+  fuell.style.width = Math.round(anteil * 100) + '%';
+  balken.appendChild(fuell);
+  el.append(zeile, balken);
 }
 
 async function openTryon(){
@@ -1064,6 +1079,7 @@ function wire(){
   });
   $('tryonOpacity').addEventListener('input', (e) => ensureTryon().setOpacity(Number(e.target.value) / 100));
   $('glossToggle').addEventListener('change', (e) => ensureTryon().setGloss(e.target.checked));
+  $('schattenToggle').addEventListener('change', (e) => ensureTryon().setSchatten(e.target.checked));
   $('btnTryonShare').addEventListener('click', shareTryon);
 
   // Modal

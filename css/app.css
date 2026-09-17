@@ -561,3 +561,12 @@ input[type="color"]{
 }
 .card{ position:relative; }
 .copy-all{ font-size:12.5px; padding:9px 10px; flex:0 0 auto; }
+.tryon-status{ display:flex; flex-direction:column; gap:6px; align-items:center; min-width:190px; }
+.tryon-status .balken{
+  display:block; width:100%; height:4px; border-radius:999px;
+  background:var(--surface-2); overflow:hidden;
+}
+.tryon-status .balken > span{
+  display:block; height:100%; background:var(--accent);
+  transition:width .18s ease;
+}

@@ -32,12 +32,17 @@ export function loadDetector(onStatus){
   if(loading) return loading;
 
   loading = (async () => {
-    if(onStatus) onStatus('Erkennung wird geladen …');
+    if(onStatus) onStatus({ text:'Erkennung wird vorbereitet …' });
     const vision = await import(LIB);
     const fileset = await vision.FilesetResolver.forVisionTasks(WASM_DIR);
-    if(onStatus) onStatus('Modell wird geladen … (einmalig, rund 8 MB)');
+
+    // Das Modell selbst laden, damit der Fortschritt sichtbar ist -- beim
+    // ersten Mal sind es rund 8 MB, danach kommt es aus dem Zwischenspeicher.
+    const buffer = await ladeModell(onStatus);
+
+    if(onStatus) onStatus({ text:'Erkennung wird gestartet …' });
     landmarker = await vision.HandLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: MODEL },
+      baseOptions: buffer ? { modelAssetBuffer: buffer } : { modelAssetPath: MODEL },
       runningMode: 'IMAGE',
       numHands: 2,
       minHandDetectionConfidence: 0.35,
@@ -49,6 +54,35 @@ export function loadDetector(onStatus){
 
   loading.catch(() => { loading = null; });
   return loading;
+}
+
+/** Laedt die Modelldatei mit Fortschrittsmeldung. */
+async function ladeModell(onStatus){
+  try{
+    const res = await fetch(MODEL);
+    if(!res.ok || !res.body) return null;
+    const gesamt = Number(res.headers.get('content-length')) || 0;
+    const teile = [];
+    let geladen = 0;
+    const reader = res.body.getReader();
+    for(;;){
+      const { done, value } = await reader.read();
+      if(done) break;
+      teile.push(value);
+      geladen += value.length;
+      if(onStatus){
+        onStatus(gesamt
+          ? { text:'Erkennung wird geladen …', anteil: geladen / gesamt }
+          : { text:'Erkennung wird geladen … ' + (geladen / 1048576).toFixed(1) + ' MB' });
+      }
+    }
+    const buf = new Uint8Array(geladen);
+    let pos = 0;
+    for(const t of teile){ buf.set(t, pos); pos += t.length; }
+    return buf;
+  }catch(e){
+    return null;     // dann laedt MediaPipe das Modell selbst
+  }
 }
 
 export function detectorReady(){ return !!landmarker; }

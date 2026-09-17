@@ -20,7 +20,11 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 * Stempel: Herz, Stern, Blüte, Punkt, Schleife
 * Farbe und Größe liegen über allen Reitern und sind immer erreichbar
 * Ebenen mit Sichtbarkeit, Reihenfolge und Deckkraft
-* Acht Nagelformen (Oval, Rund, Squoval, Quadrat, Mandel, Sarg, Ballerina, Stiletto)
+* Acht Nagelformen (Rund, Oval, Squoval, Quadrat, Mandel, Sarg, Ballerina,
+  Stiletto) mit realistischen Silhouetten und Längenverhältnissen: Eine runde
+  Naturform endet auf dem Nagelbett, eine Ballerina- oder Stilettoform ragt
+  darüber hinaus wie eine echte Verlängerung. Muster richten sich nach der
+  Form, ein French sitzt also bei jeder Länge an der Spitze
 * Rückgängig und Wiederholen (24 Schritte)
 * Notiz je Entwurf (Kundin, verwendete Lacke, Anlass), Schlagworte und
   Favoriten; die Galerie durchsucht Name, Notiz und Schlagworte
@@ -45,8 +49,9 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 * Fehlende Nägel lassen sich von Hand ergänzen
 * Fotos werden vor der Erkennung aufgerichtet und verkleinert, damit die
   Drehung von Handyfotos (EXIF) nicht dazu führt, dass die Nägel danebensitzen
-* Licht und Schatten der Hand scheinen durch das Design, dazu ein Glanz —
-  sonst wirkt der Nagel wie aufgeklebt
+* Licht und Schatten der Hand scheinen durch das Design, dazu ein Glanz
+  entlang der Nagelwölbung und ein Schatten auf dem Finger — ohne beides
+  wirkt der Nagel wie aufgeklebt; beides lässt sich abschalten
 * Ergebnis als Bild teilen oder sichern
 
 **Geplant**
@@ -119,5 +124,11 @@ Gezeichnet wird immer in die normierte Nagelform, nicht in ein beliebiges Bild.
 Dadurch lässt sich dasselbe Design auf jeden erkannten Nagel legen.
 
 Bibliothek und Modell der Erkennung werden erst beim ersten Öffnen der Anprobe
-geladen (rund 17 MB) und danach im Cache gehalten. Der erste Start der App
-bleibt dadurch leicht.
+geladen (rund 17 MB, mit Fortschrittsanzeige) und danach im Cache gehalten.
+Der erste Start der App bleibt dadurch leicht.
+
+Das Raster einer Nagelform ist immer 100 × 140 Einheiten, die Nagelplatte
+nimmt davon 68 % der Breite ein und reicht je nach Form unterschiedlich weit
+nach oben. In der Anprobe wird dieses Raster an der Nagelhaut verankert —
+dadurch stimmen die Längen von selbst, ohne dass die Erkennung etwas über
+die gewünschte Form wissen müsste.

@@ -6,7 +6,7 @@
  * man darf also ueber den Rand hinausmalen, ohne dass etwas kaputtgeht.
  */
 
-import { SHAPE_W, SHAPE_H, shapePath } from './shapes.js';
+import { SHAPE_W, SHAPE_H, shapePath, shapeBounds } from './shapes.js';
 import { NATURAL } from './store.js';
 import { applyPattern, drawStamp } from './patterns.js';
 
@@ -142,15 +142,26 @@ export class NailEditor {
     this._invalidate('draw');
   }
 
-  /** Eine Vorlage auf die aktive Ebene legen. */
+  /**
+   * Eine Vorlage auf die aktive Ebene legen.
+   *
+   * Gezeichnet wird in den Bereich der Nagelform, nicht in das ganze
+   * Raster -- sonst saesse ein French bei einer kurzen Form oberhalb des
+   * Nagels und waere gar nicht zu sehen.
+   */
   usePattern(id, options){
     const l = this.activeLayer;
     if(!l) return;
     this._pushUndo(l, 0, 0, IMG_W, IMG_H);
+
+    const b = shapeBounds(this.shape);
     l.ctx.save();
     l.ctx.globalAlpha = this.opacity;
+    l.ctx.translate(b.x * RES, b.y * RES);
+    l.ctx.scale(b.w * RES / IMG_W, b.h * RES / IMG_H);
     applyPattern(l.ctx, id, Object.assign({ color: this.color, color2: this.color2 }, options));
     l.ctx.restore();
+
     this._invalidate('draw');
     this._changed('pattern');
   }
@@ -463,13 +474,21 @@ export class NailEditor {
     this._dpr = dpr;
   }
 
+  /**
+   * Die Ansicht richtet sich nach der Nagelform, nicht nach dem ganzen
+   * Raster: sonst laege eine kurze runde Form klein in einer grossen
+   * leeren Flaeche. Gezeichnet wird trotzdem im vollen Raster.
+   */
   _layout(){
     const r = this.view.getBoundingClientRect();
     const pad = 18;
-    const base = Math.min((r.width - pad * 2) / IMG_W, (r.height - pad * 2) / IMG_H);
+    const b = shapeBounds(this.shape);
+    const bw = b.w * RES, bh = b.h * RES;
+    const bx = b.x * RES, by = b.y * RES;
+    const base = Math.min((r.width - pad * 2) / bw, (r.height - pad * 2) / bh);
     const scale = base * this.zoom;
-    const ox = (r.width - IMG_W * scale) / 2 + this.panX;
-    const oy = (r.height - IMG_H * scale) / 2 + this.panY;
+    const ox = (r.width - bw * scale) / 2 - bx * scale + this.panX;
+    const oy = (r.height - bh * scale) / 2 - by * scale + this.panY;
     return { scale, ox, oy };
   }
 

@@ -10,7 +10,9 @@
 import { detectNails, loadDetector, FINGERS } from './handdetect.js';
 import { drawQuad, quadContains, quadBounds } from './warp.js';
 import { designTexture } from './compose.js';
+import { shapeBounds, SHAPE_W, SHAPE_H } from './shapes.js';
 import { refineNail } from './nailfit.js';
+import { PLATE_W, RASTER_RATIO } from './shapes.js';
 
 const HANDLE_R = 11;      // Radius der Griffe in Bildschirmpixeln
 const HANDLE_OFF = 17;    // Abstand der Griffe vom Nagelrand
@@ -27,6 +29,7 @@ export class TryOn {
     this.selected = null;
     this.opacity = 1;
     this.gloss = true;
+    this.schatten = true;
 
     this.zoom = 1;
     this.panX = 0;
@@ -126,7 +129,7 @@ export class TryOn {
           { id: 'n' + hi + '-' + n.finger, hand: hi, handName, name: n.name,
             finger: n.finger, visible: true, designId: null,
             confidence: fein.confidence, source: fein.source },
-          { cx: fein.cx, cy: fein.cy, angle: fein.angle, w: fein.w, h: fein.h }
+          plateToRaster(fein)
         ));
       });
     });
@@ -160,8 +163,8 @@ export class TryOn {
         cx: count === 1 ? W * 0.5 : W * (0.28 + i * 0.11),
         cy: count === 1 ? H * 0.5 : H * 0.45,
         angle: -Math.PI / 2,
-        w: base * (i === 0 ? 1.1 : 1 - i * 0.07),
-        h: base * 1.3 * (i === 0 ? 1 : 1 - i * 0.06),
+        w: base * (i === 0 ? 1.1 : 1 - i * 0.07) / PLATE_W,
+        h: base * (i === 0 ? 1.1 : 1 - i * 0.07) / PLATE_W * RASTER_RATIO,
         visible: true, designId: null
       });
     }
@@ -267,6 +270,7 @@ export class TryOn {
 
   setOpacity(v){ this.opacity = v; this._invalidate(); }
   setGloss(on){ this.gloss = !!on; this._invalidate(); }
+  setSchatten(on){ this.schatten = !!on; this._invalidate(); }
 
   /* ---------------- Ansicht und Koordinaten ---------------- */
 
@@ -366,7 +370,7 @@ export class TryOn {
       }
 
       // Nagel unter dem Finger auswaehlen
-      const hit = [...this.nails].reverse().find(n => n.visible && quadContains(quadOf(n), p.x, p.y));
+      const hit = [...this.nails].reverse().find(n => n.visible && quadContains(this._frameQuad(n), p.x, p.y));
       if(hit){
         this.selected = hit.id;
         this._drag = { mode:'move', nail: hit, start: p, cx0: hit.cx, cy0: hit.cy };
@@ -447,7 +451,7 @@ export class TryOn {
   }
 
   _handlePoints(nail){
-    const q = quadOf(nail);
+    const q = this._frameQuad(nail);
     const tip = this._toScreen({ x:(q[0].x + q[1].x) / 2, y:(q[0].y + q[1].y) / 2 });
     const side = this._toScreen({ x:(q[1].x + q[2].x) / 2, y:(q[1].y + q[2].y) / 2 });
     const c = this._toScreen({ x: nail.cx, y: nail.cy });
@@ -536,12 +540,25 @@ export class TryOn {
     lc.drawImage(this.shade, b.x, b.y, b.w, b.h, 0, 0, layer.width, layer.height);
 
     if(this.gloss){
+      // Laengsglanz entlang der Nagelwoelbung plus ein Lichtpunkt -- ein
+      // rein linearer Verlauf sieht flach aus, echte Naegel sind gewoelbt.
       lc.globalCompositeOperation = 'screen';
-      const g = lc.createLinearGradient(0, 0, layer.width * 0.7, layer.height);
-      g.addColorStop(0, 'rgba(255,255,255,0.34)');
-      g.addColorStop(0.42, 'rgba(255,255,255,0.05)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      lc.fillStyle = g;
+      const quer = lc.createLinearGradient(0, 0, layer.width, 0);
+      quer.addColorStop(0, 'rgba(255,255,255,0.03)');
+      quer.addColorStop(0.28, 'rgba(255,255,255,0.26)');
+      quer.addColorStop(0.46, 'rgba(255,255,255,0.05)');
+      quer.addColorStop(1, 'rgba(255,255,255,0.10)');
+      lc.fillStyle = quer;
+      lc.fillRect(0, 0, layer.width, layer.height);
+
+      const punkt = lc.createRadialGradient(
+        layer.width * 0.33, layer.height * 0.26, 0,
+        layer.width * 0.33, layer.height * 0.26, Math.max(layer.width, layer.height) * 0.42
+      );
+      punkt.addColorStop(0, 'rgba(255,255,255,0.40)');
+      punkt.addColorStop(0.45, 'rgba(255,255,255,0.10)');
+      punkt.addColorStop(1, 'rgba(255,255,255,0)');
+      lc.fillStyle = punkt;
       lc.fillRect(0, 0, layer.width, layer.height);
     }
 
@@ -552,14 +569,47 @@ export class TryOn {
 
     ctx.save();
     ctx.globalAlpha = this.opacity;
+    // Ein Nagel liegt auf dem Finger auf und wirft einen Schatten; ohne den
+    // wirkt er wie aufgeklebt. Verlaengerte Formen brauchen ihn am meisten.
+    if(this.schatten){
+      ctx.shadowColor = 'rgba(28,12,18,0.45)';
+      ctx.shadowBlur = Math.max(1.5, nail.w * 0.10);
+      ctx.shadowOffsetX = Math.cos(nail.angle) * nail.h * 0.035;
+      ctx.shadowOffsetY = Math.sin(nail.angle) * nail.h * 0.035 + nail.w * 0.02;
+    }
     ctx.drawImage(layer, b.x, b.y, b.w, b.h);
     ctx.restore();
+  }
+
+  /** Welche Form liegt gerade auf diesem Nagel? */
+  _shapeOf(nail){
+    const design = nail.designId ? this.designs.get(nail.designId) : null;
+    const n = design && design.nails && design.nails[nail.finger];
+    return (n && n.shape) || null;
+  }
+
+  /**
+   * Der Auswahlrahmen folgt der Nagelform, nicht dem Raster -- sonst zieht
+   * man an einem Rahmen, der deutlich groesser ist als der sichtbare Nagel.
+   */
+  _frameQuad(nail){
+    const shape = this._shapeOf(nail);
+    const q = quadOf(nail);
+    if(!shape) return q;
+    const b = shapeBounds(shape);
+    const u = (x) => x / SHAPE_W, v = (y) => y / SHAPE_H;
+    const at = (x, y) => {
+      const top = { x: q[0].x + (q[1].x - q[0].x) * u(x), y: q[0].y + (q[1].y - q[0].y) * u(x) };
+      const bot = { x: q[3].x + (q[2].x - q[3].x) * u(x), y: q[3].y + (q[2].y - q[3].y) * u(x) };
+      return { x: top.x + (bot.x - top.x) * v(y), y: top.y + (bot.y - top.y) * v(y) };
+    };
+    return [at(b.x, b.y), at(b.x + b.w, b.y), at(b.x + b.w, b.y + b.h), at(b.x, b.y + b.h)];
   }
 
   _paintHandles(ctx){
     const nail = this.selectedNail;
     if(!nail || !nail.visible) return;
-    const q = quadOf(nail).map(p => this._toScreen(p));
+    const q = this._frameQuad(nail).map(p => this._toScreen(p));
 
     ctx.save();
     ctx.lineWidth = 1.6;
@@ -606,6 +656,33 @@ export class TryOn {
 }
 
 /* ---------------- Geometrie ---------------- */
+
+/**
+ * Aus der gemessenen Nagelplatte das Raster machen, auf das ein Design
+ * gelegt wird.
+ *
+ * Im Raster nimmt die Nagelplatte nur einen Teil der Breite ein, und nach
+ * oben steht Platz fuer verlaengerte Formen. Das Raster wird deshalb
+ * groesser als der gemessene Nagel -- an der Nagelhaut verankert, damit
+ * eine kurze Form auf dem Nagelbett endet und eine lange darueber
+ * hinausragt, so wie eine echte Verlaengerung.
+ */
+export function plateToRaster(plate){
+  const w = plate.w / PLATE_W;
+  const h = w * RASTER_RATIO;
+  const ux = Math.cos(plate.angle), uy = Math.sin(plate.angle);
+  // Verankert wird an der Nagelhaut, aber nicht ganz am unteren Rand der
+  // Schaetzung: die faellt eher zu lang aus, und ein Fehler dort wuerde den
+  // ganzen Nagel Richtung Gelenk ziehen.
+  const baseX = plate.cx - ux * plate.h * 0.38;
+  const baseY = plate.cy - uy * plate.h * 0.38;
+  return {
+    cx: baseX + ux * h / 2,
+    cy: baseY + uy * h / 2,
+    angle: plate.angle,
+    w, h
+  };
+}
 
 /** Viereck [Spitze-links, Spitze-rechts, Basis-rechts, Basis-links]. */
 export function quadOf(n){

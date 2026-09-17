@@ -142,7 +142,7 @@ export function refineNail(photo, box){
     // Gemessene Breite mit der Schaetzung mitteln und begrenzen: die
     // Messung bringt die Groessenordnung, die Schaetzung haelt Ausreisser
     // in Schach.
-    const gemessen = fingerW * 0.66;
+    const gemessen = fingerW * 0.74;   // Anteil der Fingerbreite an der Kuppe
     const gemischt = box.w * 0.35 + gemessen * 0.65;
     const nailW = Math.max(box.w * 0.75, Math.min(box.w * 1.35, gemischt));
     const faktor = nailW / box.w;
