@@ -752,3 +752,41 @@ input[type="color"]{
   box-shadow:0 4px 14px rgba(0,0,0,.3);
 }
 .cam-countdown[hidden]{ display:none; }
+
+/* ================= Aus Foto übernehmen ================= */
+#entnahmeCanvas{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+.entnahme-panel [hidden]{ display:none !important; }
+.entnahme-panel{ gap:9px; }
+
+.entnahme-chip{ padding:4px 12px 4px 5px; }
+.entnahme-chip canvas{
+  width:24px; height:34px; display:block; border-radius:7px;
+  background:var(--surface-2);
+}
+.entnahme-chip .leer{
+  width:24px; height:34px; border-radius:7px; border:1.5px dashed var(--line);
+  display:grid; place-items:center; color:var(--muted); font-size:14px;
+}
+
+.entnahme-form{ display:flex; flex-direction:column; gap:7px; }
+.entnahme-formen{
+  display:flex; gap:5px; overflow-x:auto; scrollbar-width:none; padding-bottom:1px;
+}
+.entnahme-formen::-webkit-scrollbar{ display:none; }
+.entnahme-formen .shape-item{ flex:0 0 58px; padding:5px 3px; }
+.entnahme-formen .shape-item .shape-bild{ width:26px; height:42px; margin:0 auto; }
+.entnahme-formen .shape-item .shape-name{ font-size:10.5px; }
+.entnahme-laenge{ display:flex; align-items:center; gap:10px; font-size:13px; color:var(--muted); }
+.entnahme-laenge input{ flex:1; }
+.entnahme-laenge output{
+  min-width:78px; text-align:right;
+  font-family:Fraunces,Georgia,serif; font-weight:600; font-size:15px; color:var(--accent-strong);
+}
+.entnahme-los{ display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
+
+@media (max-width:640px){
+  .entnahme-los{ width:100%; }
+  .entnahme-los .btn{ flex:1; }
+  .view-entnahme .nudge-label{ display:none; }
+  .view-entnahme .bar-actions .btn{ padding:8px 10px; font-size:12.5px; }
+}

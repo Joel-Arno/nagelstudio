@@ -468,11 +468,11 @@ export class TryOn {
         // Drehen und Laenge zugleich: der Griff sitzt vor der Nagelspitze
         const dx = p.x - n.cx, dy = p.y - n.cy;
         n.angle = Math.atan2(dy, dx);
-        n.h = Math.max(6, (Math.hypot(dx, dy) - this._offsetInPhoto()) * 2);
+        n.h = Math.max(6, (Math.hypot(dx, dy) - this._offsetInPhoto()) / this._rahmenAnteil(n).spitze);
       }else if(d.mode === 'side'){
         const dx = p.x - n.cx, dy = p.y - n.cy;
         const across = Math.abs(dx * Math.cos(n.angle + Math.PI / 2) + dy * Math.sin(n.angle + Math.PI / 2));
-        n.w = Math.max(5, (across - this._offsetInPhoto()) * 2);
+        n.w = Math.max(5, (across - this._offsetInPhoto()) / this._rahmenAnteil(n).seite);
       }
       this._invalidate();
     });
@@ -692,6 +692,22 @@ export class TryOn {
       return { x: top.x + (bot.x - top.x) * v(y), y: top.y + (bot.y - top.y) * v(y) };
     };
     return [at(b.x, b.y), at(b.x + b.w, b.y), at(b.x + b.w, b.y + b.h), at(b.x, b.y + b.h)];
+  }
+
+  /**
+   * Wie weit Spitze und Seite des Rahmens vom Mittelpunkt entfernt sind,
+   * als Anteil von Rasterhoehe und -breite. Die Griffe sitzen am Rahmen der
+   * Form, nicht am Raster -- ohne diese Umrechnung springt der Nagel beim
+   * ersten Ziehen auf einen Bruchteil seiner Groesse.
+   */
+  _rahmenAnteil(nail){
+    const masse = this._shapeOf(nail);
+    if(!masse) return { spitze: 0.5, seite: 0.5 };
+    const b = shapeBounds(masse.shape, masse.length);
+    return {
+      spitze: Math.max(0.05, (SHAPE_H / 2 - b.y) / SHAPE_H),
+      seite: Math.max(0.05, (b.x + b.w - SHAPE_W / 2) / SHAPE_W)
+    };
   }
 
   _paintHandles(ctx){

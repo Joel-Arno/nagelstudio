@@ -170,6 +170,19 @@ export class NailEditor {
     return layer;
   }
 
+  /** Ein Bild (etwa einen Nagel aus einem Foto) als eigene Ebene einfuegen. */
+  addImageLayer(bild, name){
+    const layer = this.addLayer(name || 'Foto');
+    layer.ctx.drawImage(bild, 0, 0, IMG_W, IMG_H);
+    this.undoStack.push({ type:'layer-add', layerId: layer.id });
+    if(this.undoStack.length > UNDO_STEPS) this.undoStack.shift();
+    this.redoStack.length = 0;
+    if(this.onHistory) this.onHistory();
+    this._invalidate('draw');
+    this._changed('layers');
+    return layer;
+  }
+
   /** Musterebene in den aktuellen Formbereich zeichnen. */
   _renderPattern(layer){
     if(!layer.pattern) return;

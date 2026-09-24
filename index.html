@@ -55,12 +55,13 @@
     <input class="name-field" id="designName" type="text" placeholder="Name des Entwurfs" maxlength="40" aria-label="Name des Entwurfs">
     <div class="bar-actions">
       <button class="icon-btn" id="btnFavorit" type="button" aria-pressed="false" aria-label="Als Favorit merken">☆</button>
+      <button class="btn ghost" id="btnSetFoto" type="button">Aus Foto</button>
       <button class="btn ghost" id="btnSetTryon" type="button">Anprobieren</button>
     </div>
   </header>
   <div class="set-stage">
     <div class="nail-set" id="nailSet"></div>
-    <p class="set-hint">Tippe einen Nagel an, um ihn zu bemalen. Die Nägel lassen sich einzeln gestalten – oder du überträgst einen fertigen auf alle anderen.</p>
+    <p class="set-hint">Tippe einen Nagel an, um ihn zu bemalen. Die Nägel lassen sich einzeln gestalten – oder du überträgst einen fertigen auf alle anderen. Mit „Aus Foto“ übernimmst du Nägel von einem Bild.</p>
     <div class="anproben" id="anprobenBox" hidden>
       <span class="form-titel">Gespeicherte Anproben</span>
       <div class="anproben-reihe" id="anprobenReihe"></div>
@@ -167,6 +168,7 @@
       <div class="tab-panel" id="panelLayers">
         <div class="layer-list" id="layerList"></div>
         <button class="btn ghost full" id="btnAddLayer" type="button">Ebene hinzufügen</button>
+        <button class="btn ghost full" id="btnFotoEbene" type="button">Nagel aus Foto einfügen</button>
 
         <p class="hint">Grundfarbe unten, Verzierungen darüber. Ebenen lassen sich einzeln ausblenden — praktisch, um Varianten zu vergleichen.</p>
       </div>
@@ -317,6 +319,74 @@
   </div>
 </section>
 
+<!-- ============ Aus Foto übernehmen ============ -->
+<section class="view view-entnahme" id="viewEntnahme" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="btnEntnahmeBack" type="button" aria-label="Zurück">‹</button>
+    <div class="titel-block">
+      <h2 class="logo" id="entnahmeTitel">Aus Foto übernehmen</h2>
+      <p class="unterzeile" id="entnahmeUnterzeile">Rahmen auf die Nägel ziehen – was drin liegt, wird übernommen</p>
+    </div>
+    <div class="bar-actions">
+      <button class="btn ghost" id="btnEntnahmeNeu" type="button">Anderes Foto</button>
+    </div>
+  </header>
+
+  <div class="tryon-stage">
+    <canvas id="entnahmeCanvas"></canvas>
+    <div class="zoom-controls">
+      <button class="icon-btn small" id="btnEntnahmeZoomOut" type="button" aria-label="Verkleinern">−</button>
+      <button class="icon-btn small" id="btnEntnahmeZoomReset" type="button" aria-label="Ansicht zurücksetzen">⤢</button>
+      <button class="icon-btn small" id="btnEntnahmeZoomIn" type="button" aria-label="Vergrößern">＋</button>
+    </div>
+    <p class="tryon-status" id="entnahmeStatus" hidden></p>
+    <p class="erkannt-chip" id="entnahmeChip" hidden></p>
+  </div>
+
+  <div class="justage entnahme-panel">
+    <div class="nail-chips" id="entnahmeChips"></div>
+    <div class="entnahme-form" id="entnahmeFormBox">
+      <div class="entnahme-formen" id="entnahmeFormen"></div>
+      <div class="entnahme-laenge">
+        <label for="entnahmeLaenge">Länge</label>
+        <input type="range" id="entnahmeLaenge" min="0" max="100" step="1" value="36">
+        <output id="entnahmeLaengeOut">Mittel-kurz</output>
+      </div>
+    </div>
+    <div class="nudge-bar">
+      <span class="nudge-group" role="group" aria-label="Größe">
+        <button class="nudge" data-enudge="smaller" type="button" aria-label="kleiner">−</button>
+        <button class="nudge" data-enudge="bigger" type="button" aria-label="größer">＋</button>
+        <span class="nudge-label">Größe</span>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Breite">
+        <button class="nudge" data-enudge="narrower" type="button" aria-label="schmaler">‹</button>
+        <button class="nudge" data-enudge="wider" type="button" aria-label="breiter">›</button>
+        <span class="nudge-label">Breite</span>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Drehen">
+        <button class="nudge" data-enudge="turnleft" type="button" aria-label="nach links drehen">↺</button>
+        <button class="nudge" data-enudge="turnright" type="button" aria-label="nach rechts drehen">↻</button>
+        <span class="nudge-label">Drehen</span>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Zur Fingerspitze schieben">
+        <button class="nudge" data-enudge="backward" type="button" aria-label="Richtung Gelenk">⇣</button>
+        <button class="nudge" data-enudge="forward" type="button" aria-label="Richtung Fingerspitze">⇡</button>
+        <span class="nudge-label">Sitz</span>
+      </span>
+    </div>
+    <div class="tryon-actions">
+      <label class="check" id="entnahmeEinerZeile"><input type="checkbox" id="entnahmeEiner"> Ein Nagel für alle Finger</label>
+      <button class="btn ghost" id="btnEntnahmeErkennen" type="button">Neu erkennen</button>
+      <span class="entnahme-los">
+        <button class="btn" id="btnEntnahmeUebernehmen" type="button">Übernehmen</button>
+        <button class="btn primary" id="btnEntnahmeAnprobieren" type="button">Übernehmen &amp; anprobieren</button>
+        <button class="btn primary" id="btnEntnahmeEinfuegen" type="button" hidden>Einfügen</button>
+      </span>
+    </div>
+  </div>
+</section>
+
 <!-- ============ Live-Kamera ============ -->
 <section class="view view-camera" id="viewCamera" hidden>
   <div class="cam-stage">
@@ -341,6 +411,7 @@
 
 <input type="file" id="filePhoto" accept="image/*" hidden>
 <input type="file" id="filePhotoCam" accept="image/*" capture="environment" hidden>
+<input type="file" id="fileEntnahme" accept="image/*" hidden>
 <input type="file" id="fileImport" accept="application/json,.json" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

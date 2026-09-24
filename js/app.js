@@ -7,8 +7,9 @@ import { fingerCanvas } from './nailrender.js';
 import { NailEditor, IMG_W, IMG_H } from './draw.js';
 import { TryOn } from './tryon.js';
 import { LiveKamera } from './camera.js';
+import { Entnahme } from './entnahme.js';
 import {
-  emptyDesign, putDesign, getDesign, listDesigns, deleteDesign, purgeDeleted,
+  emptyDesign, newId, putDesign, getDesign, listDesigns, deleteDesign, purgeDeleted,
   canvasToImage, imageToUrl, releaseUrl, loadImage,
   exportDesigns, mergeDesigns, shareFile, shareBlob, storageEstimate,
   FINGER_KEYS, FINGER_NAMES, NATURAL
@@ -322,6 +323,7 @@ function showView(which){
   $('viewEditor').hidden = which !== 'editor';
   $('viewTryon').hidden = which !== 'tryon';
   $('viewCamera').hidden = which !== 'camera';
+  $('viewEntnahme').hidden = which !== 'entnahme';
 }
 
 async function closeEditor(){
@@ -733,10 +735,11 @@ function toast(msg){
 }
 
 let modalAction = null;
-function askModal(title, text, okLabel, fn){
+function askModal(title, text, okLabel, fn, stil = 'danger'){
   $('modalTitle').textContent = title;
   $('modalText').textContent = text;
   $('modalOk').textContent = okLabel;
+  $('modalOk').className = 'btn ' + stil;
   modalAction = fn;
   $('modal').hidden = false;
 }
@@ -1036,6 +1039,230 @@ function closeTryon(){
   if(kamera) kamera.stop();
   showView('gallery');
   renderGallery();
+}
+
+/* ---------- Aus Foto uebernehmen ---------- */
+
+let entnahme = null;
+let entnahmeZiel = null;        // { art:'satz' } oder { art:'nagel', finger }
+let entnahmeUrl = null;
+
+function ensureEntnahme(){
+  if(entnahme) return entnahme;
+  entnahme = new Entnahme($('entnahmeCanvas'));
+  entnahme.onChange = () => renderEntnahmeChips();
+  return entnahme;
+}
+
+function entnahmeStatus(info){
+  const el = $('entnahmeStatus');
+  if(!info){ el.hidden = true; el.textContent = ''; return; }
+  el.hidden = false;
+  el.textContent = typeof info === 'string' ? info
+    : info.text + (info.anteil == null ? '' : ' ' + Math.round(info.anteil * 100) + '%');
+}
+
+/** Dateiauswahl oeffnen -- muss direkt aus einem Tippen heraus passieren. */
+function waehleEntnahmeFoto(ziel){
+  entnahmeZiel = ziel;
+  $('fileEntnahme').value = '';
+  $('fileEntnahme').click();
+}
+
+async function entnahmeFoto(file){
+  if(!file || !entnahmeZiel) return;
+  const e = ensureEntnahme();
+  const nagel = entnahmeZiel.art === 'nagel';
+  if(nagel){
+    const ed = ensureEditor();
+    e.setForm(ed.shape, ed.length);
+  }else{
+    const vorlage = current && current.nails.mittelfinger;
+    const masse = nagelMasse(vorlage || { shape: 'oval' });
+    e.setForm(masse.shape, masse.length);
+  }
+  e.nurFinger = nagel ? entnahmeZiel.finger : null;
+  e.einzeln = !nagel && $('entnahmeEiner').checked;
+
+  $('entnahmeTitel').textContent = nagel ? 'Nagel aus Foto' : 'Aus Foto übernehmen';
+  $('entnahmeUnterzeile').textContent = nagel
+    ? 'Rahmen auf den Nagel ziehen – er kommt als neue Ebene auf ' + FINGER_NAMES[entnahmeZiel.finger]
+    : 'Rahmen auf die Nägel ziehen – was drin liegt, wird übernommen';
+  $('entnahmeFormBox').hidden = nagel;
+  $('entnahmeEinerZeile').hidden = nagel;
+  $('btnEntnahmeUebernehmen').hidden = nagel;
+  $('btnEntnahmeAnprobieren').hidden = nagel;
+  $('btnEntnahmeEinfuegen').hidden = !nagel;
+  showView('entnahme');
+
+  if(entnahmeUrl) releaseUrl(entnahmeUrl);
+  entnahmeUrl = URL.createObjectURL(file);
+  try{
+    await e.setPhoto(await loadImage(entnahmeUrl));
+  }catch(err){
+    toast('Foto konnte nicht geladen werden');
+    return;
+  }
+  syncEntnahmeForm();
+  renderEntnahmeChips();
+  await entnahmeErkennen();
+}
+
+async function entnahmeErkennen(){
+  const e = ensureEntnahme();
+  if(!e.photo) return;
+  try{
+    entnahmeStatus('Nägel werden gesucht …');
+    const res = await e.detect(entnahmeStatus);
+    entnahmeStatus(null);
+    if(!res.nails){
+      e.addManualNails();
+      toast(e.einRahmen ? 'Keine Hand erkannt – zieh den Rahmen auf den Nagel'
+                        : 'Keine Hand erkannt – zieh die Rahmen auf die Nägel');
+    }else{
+      const chip = $('entnahmeChip');
+      chip.textContent = '✓ ' + (e.nurFinger ? 'Nagel gefunden' : res.nails + ' Nägel gefunden');
+      chip.hidden = false;
+      setTimeout(() => { chip.hidden = true; }, 2200);
+    }
+  }catch(err){
+    entnahmeStatus(null);
+    if(!e.nails.length) e.addManualNails();
+    toast('Erkennung fehlgeschlagen – setz die Rahmen von Hand');
+  }
+  renderEntnahmeChips();
+}
+
+function renderEntnahmeChips(){
+  const e = entnahme;
+  const box = $('entnahmeChips');
+  box.innerHTML = '';
+  if(!e || !e.photo) return;
+  const chip = (text, nail, onClick, aktiv) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'nail-chip entnahme-chip' + (aktiv ? ' is-active' : '');
+    if(nail){
+      b.appendChild(e.vorschau(nail, 24));
+    }else{
+      const leer = document.createElement('span');
+      leer.className = 'leer';
+      leer.textContent = '+';
+      b.appendChild(leer);
+    }
+    b.appendChild(document.createTextNode(text));
+    if(onClick) b.addEventListener('click', onClick);
+    box.appendChild(b);
+  };
+  if(e.einRahmen){
+    const n = e.selectedNail;
+    chip(e.nurFinger ? FINGER_NAMES[e.nurFinger] : 'Für alle Finger', n, null, true);
+    return;
+  }
+  FINGER_KEYS.forEach(key => {
+    const n = e.nails.find(x => x.finger === key);
+    chip(FINGER_NAMES[key], n, () => {
+      const neu = !n;
+      e.rahmenFuer(key);
+      renderEntnahmeChips();
+      if(neu) toast('Rahmen gesetzt – zieh ihn auf den ' + FINGER_NAMES[key]);
+    }, n && n.id === e.selected);
+  });
+}
+
+function buildEntnahmeFormen(){
+  const box = $('entnahmeFormen');
+  box.innerHTML = '';
+  SHAPES.forEach(sh => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'shape-item';
+    b.dataset.shape = sh.id;
+    const bild = document.createElement('span');
+    bild.className = 'shape-bild';
+    const name = document.createElement('span');
+    name.className = 'shape-name';
+    name.textContent = sh.name;
+    b.append(bild, name);
+    b.addEventListener('click', () => {
+      const e = ensureEntnahme();
+      e.setForm(sh.id, e.form.length);
+      syncEntnahmeForm();
+      renderEntnahmeChips();
+    });
+    box.appendChild(b);
+  });
+}
+
+function syncEntnahmeForm(){
+  const e = ensureEntnahme();
+  const { shape, length } = e.form;
+  document.querySelectorAll('#entnahmeFormen .shape-item').forEach(b => {
+    b.classList.toggle('is-active', b.dataset.shape === shape);
+    const slot = b.querySelector('.shape-bild');
+    slot.innerHTML = '';
+    slot.appendChild(fingerCanvas(26, 42, { shape: b.dataset.shape, length }));
+  });
+  $('entnahmeLaenge').value = Math.round(length * 100);
+  $('entnahmeLaengeOut').textContent = lengthLabel(length);
+}
+
+/** Aus den Rahmen einen ganzen Satz machen. */
+async function entnahmeUebernehmen(anprobieren){
+  const e = entnahme;
+  if(!e || !e.photo || !current) return;
+  if(!e.nails.some(n => n.visible)){ toast('Setz zuerst einen Rahmen auf einen Nagel'); return; }
+  entnahmeStatus('Nägel werden übernommen …');
+  const { shape, length } = e.form;
+  for(const key of FINGER_KEYS){
+    const n = e.rahmenZumUebernehmen(key);
+    const image = await canvasToImage(e.ausschneiden(n));
+    current.nails[key] = {
+      shape, length, base: NATURAL,
+      layers: [{ id: newId(), name: 'Foto', visible: true, opacity: 1, image }]
+    };
+  }
+  if(!$('designName').value.trim()) $('designName').value = 'Aus Foto';
+  await saveNow();
+  entnahmeStatus(null);
+  entnahmeAufraeumen();
+  if(anprobieren){
+    await openTryon(current.id);
+  }else{
+    await showSet();
+    toast('Nägel übernommen – tippe einen an, um ihn weiter zu bemalen');
+  }
+}
+
+/** Einen Nagel als neue Ebene in den Editor legen. */
+function entnahmeEinfuegen(){
+  const e = entnahme;
+  const n = e && e.rahmenZumUebernehmen(e.nurFinger);
+  if(!n){ toast('Setz zuerst den Rahmen auf einen Nagel'); return; }
+  const ed = ensureEditor();
+  ed.addImageLayer(e.ausschneiden(n), 'Foto');
+  entnahmeAufraeumen();
+  showView('editor');
+  refreshLayerList();
+  dirty = true;
+  scheduleSave();
+  requestAnimationFrame(() => ed.render());
+  toast('Als Ebene eingefügt – darüber kannst du weitermalen');
+}
+
+function entnahmeAufraeumen(){
+  if(entnahmeUrl){ releaseUrl(entnahmeUrl); entnahmeUrl = null; }
+}
+
+function entnahmeZurueck(){
+  const nagel = entnahmeZiel && entnahmeZiel.art === 'nagel';
+  entnahmeAufraeumen();
+  if(nagel){
+    showView('editor');
+    requestAnimationFrame(() => ensureEditor().render());
+  }else{
+    showSet();
+  }
 }
 
 /* ---------- Live-Kamera ---------- */
@@ -1368,6 +1595,61 @@ function wire(){
   $('glossToggle').addEventListener('change', (e) => ensureTryon().setGloss(e.target.checked));
   $('schattenToggle').addEventListener('change', (e) => ensureTryon().setSchatten(e.target.checked));
 
+  // Aus Foto uebernehmen
+  $('btnSetFoto').addEventListener('click', () => {
+    if(current && !isSetEmpty(current)){
+      askModal('Nägel ersetzen?',
+        'Die Nägel aus dem Foto ersetzen alle fünf Nägel dieses Entwurfs. Für einen einzelnen Nagel: Nagel öffnen → Ebenen → „Nagel aus Foto einfügen“.',
+        'Ersetzen', () => waehleEntnahmeFoto({ art: 'satz' }), 'primary');
+      return;
+    }
+    waehleEntnahmeFoto({ art: 'satz' });
+  });
+  $('btnFotoEbene').addEventListener('click', () => waehleEntnahmeFoto({ art: 'nagel', finger: currentFinger }));
+  $('fileEntnahme').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if(f) entnahmeFoto(f);
+  });
+  $('btnEntnahmeBack').addEventListener('click', entnahmeZurueck);
+  $('btnEntnahmeNeu').addEventListener('click', () => waehleEntnahmeFoto(entnahmeZiel));
+  $('btnEntnahmeErkennen').addEventListener('click', entnahmeErkennen);
+  $('btnEntnahmeUebernehmen').addEventListener('click', () => entnahmeUebernehmen(false));
+  $('btnEntnahmeAnprobieren').addEventListener('click', () => entnahmeUebernehmen(true));
+  $('btnEntnahmeEinfuegen').addEventListener('click', entnahmeEinfuegen);
+  $('btnEntnahmeZoomIn').addEventListener('click', () => ensureEntnahme().zoomBy(1.3));
+  $('btnEntnahmeZoomOut').addEventListener('click', () => ensureEntnahme().zoomBy(0.77));
+  $('btnEntnahmeZoomReset').addEventListener('click', () => ensureEntnahme().resetView());
+  $('entnahmeEiner').addEventListener('change', (e) => {
+    const en = ensureEntnahme();
+    en.setEinzeln(e.target.checked);
+    if(!e.target.checked && en.photo){
+      // die uebrigen Finger wieder mit Rahmen versorgen
+      const sel = en.selected;
+      if(en.nails.length < 2){ entnahmeErkennen(); return; }
+      en.select(sel);
+    }
+    renderEntnahmeChips();
+  });
+  $('entnahmeLaenge').addEventListener('input', (e) => {
+    const en = ensureEntnahme();
+    en.setForm(en.form.shape, Number(e.target.value) / 100);
+    $('entnahmeLaengeOut').textContent = lengthLabel(en.form.length);
+  });
+  $('entnahmeLaenge').addEventListener('change', () => { syncEntnahmeForm(); renderEntnahmeChips(); });
+  document.querySelectorAll('.nudge[data-enudge]').forEach(b => {
+    b.addEventListener('click', () => {
+      const en = entnahme;
+      if(!en || !en.selectedNail){ toast('Wähle zuerst einen Nagel'); return; }
+      const key = b.dataset.enudge;
+      if(key === 'forward') en.slide(0.06);
+      else if(key === 'backward') en.slide(-0.06);
+      else{
+        const [what, amount] = NUDGE[key];
+        en.nudge(what, amount);
+      }
+    });
+  });
+
   // Live-Kamera
   $('btnCamClose').addEventListener('click', () => { if(kamera) kamera.stop(); showView('tryon'); });
   $('btnCamFlip').addEventListener('click', async () => {
@@ -1404,6 +1686,7 @@ function wire(){
       if(!$('modal').hidden) closeModal();
       else if(!$('viewEditor').hidden) closeEditor();
       else if(!$('viewSet').hidden) closeSet();
+      else if(!$('viewEntnahme').hidden) entnahmeZurueck();
       else if(!$('viewCamera').hidden){ if(kamera) kamera.stop(); showView('tryon'); }
       else if(!$('viewTryon').hidden) closeTryon();
     }
@@ -1421,6 +1704,7 @@ async function init(){
   buildPatterns();
   buildStamps();
   buildAnpassen();
+  buildEntnahmeFormen();
   buildColorBar();
   buildPalette();
   setColor(PALETTE[0]);

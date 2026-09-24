@@ -66,6 +66,10 @@ Anmutung der Anprobe orientieren sich an der App naild.
   Mandel oder langer Sarg, ohne es neu zu gestalten
 * Ergebnis teilen, oder beim Entwurf speichern — die Anproben erscheinen in
   der Übersicht des Entwurfs und lassen sich später wieder zeigen
+* **Aus Foto übernehmen**: ein Foto gemachter Nägel hochladen, die App setzt
+  pro Finger einen Rahmen in der gewählten Nagelform, und was darin liegt,
+  wird entzerrt zum Entwurf — danach weiter bemalbar und anprobierbar.
+  Im Editor fügt „Nagel aus Foto einfügen“ einen einzelnen Nagel als Ebene ein
 
 **Geplant**
 
@@ -125,6 +129,7 @@ zum Beispiel `npx http-server -p 8080`, und dann
 | `js/nailrender.js` | Realistische Vorschau: Nagel auf einem gezeichneten Finger |
 | `js/camera.js` | Live-Kamera mit Haltungsprüfung und Auto-Auslöser |
 | `js/tryon.js` | Anprobe: Foto, Nägel justieren, Designs auflegen |
+| `js/entnahme.js` | Nägel aus einem Foto ausschneiden und entzerren |
 | `js/warp.js` | Ein Design auf eine Nagelfläche verzerren |
 | `js/compose.js` | Ein gespeichertes Design zu einem Bild zusammensetzen |
 | `sw.js` | Offline-Betrieb |
