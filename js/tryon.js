@@ -17,6 +17,12 @@ import { PLATE_W, RASTER_RATIO } from './shapes.js';
 const HANDLE_R = 11;      // Radius der Griffe in Bildschirmpixeln
 const HANDLE_OFF = 17;    // Abstand der Griffe vom Nagelrand
 
+// Nach der Erkennung sitzt der Nagel sonst zu weit Richtung Nagelhaut.
+// Das Foto kennt keine Millimeter; ein Nagel ist im Schnitt ~11 mm breit,
+// daher wird die Verschiebung ueber die gemessene Nagelbreite geschaetzt.
+const VERSATZ_MM = 3;
+const NAGELBREITE_MM = 11;
+
 export class TryOn {
   constructor(canvas){
     this.canvas = canvas;
@@ -131,6 +137,9 @@ export class TryOn {
         // Schaetzung aus den Gelenken, danach im Bild nachgemessen
         const grob = boxFromQuad(n.quad);
         const fein = refineNail(this.photo, grob);
+        const versatz = fein.w * VERSATZ_MM / NAGELBREITE_MM;
+        fein.cx += Math.cos(fein.angle) * versatz;
+        fein.cy += Math.sin(fein.angle) * versatz;
         nails.push(Object.assign(
           { id: 'n' + hi + '-' + n.finger, hand: hi, handName, name: n.name,
             finger: n.finger, visible: true, designId: null,
