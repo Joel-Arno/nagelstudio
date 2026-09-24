@@ -9,7 +9,7 @@
 
 import { detectNails, loadDetector, FINGERS } from './handdetect.js';
 import { drawQuad, quadContains, quadBounds } from './warp.js';
-import { designTexture } from './compose.js';
+import { designTexture, nagelMasse } from './compose.js';
 import { shapeBounds, SHAPE_W, SHAPE_H } from './shapes.js';
 import { refineNail } from './nailfit.js';
 import { PLATE_W, RASTER_RATIO } from './shapes.js';
@@ -29,6 +29,12 @@ export class TryOn {
     this.selected = null;
     this.opacity = 1;
     this.gloss = true;
+    // Vorher/Nachher: Position des Trennstrichs (0..1) oder null = aus
+    this.vergleich = null;
+    // Form und Laenge fuer alle Naegel abweichend vom Entwurf, oder null
+    this.vorgabe = null;
+    // Auswahlrahmen und Griffe nur beim Nachjustieren
+    this.griffe = true;
     this.schatten = true;
 
     this.zoom = 1;
@@ -60,7 +66,7 @@ export class TryOn {
    */
   async setPhoto(img){
     const MAX = 2000;
-    const srcW = img.naturalWidth, srcH = img.naturalHeight;
+    const srcW = img.naturalWidth || img.width, srcH = img.naturalHeight || img.height;
     const k = Math.min(1, MAX / Math.max(srcW, srcH));
     const w = Math.max(1, Math.round(srcW * k)), h = Math.max(1, Math.round(srcH * k));
 
@@ -199,14 +205,33 @@ export class TryOn {
     this._invalidate();
   }
 
-  _texKey(designId, finger){ return designId + ':' + (finger || 'zeigefinger'); }
+  _texKey(designId, finger){
+    const v = this.vorgabe;
+    return designId + ':' + (finger || 'zeigefinger') + (v ? ':' + (v.shape || '') + ':' + (v.length == null ? '' : v.length.toFixed(2)) : '');
+  }
 
   async _ensureTexture(designId, finger){
     const key = this._texKey(designId, finger);
     if(!designId || this._textures.has(key)) return;
     const design = this.designs.get(designId);
     if(!design) return;
-    this._textures.set(key, await designTexture(design, finger));
+    this._textures.set(key, await designTexture(design, finger, this.vorgabe));
+  }
+
+  /**
+   * Form und Laenge fuer alle Naegel vorgeben -- "Laenge & Form anpassen"
+   * direkt auf der Hand. null nimmt wieder, was im Entwurf steht.
+   */
+  async setVorgabe(vorgabe){
+    this.vorgabe = vorgabe && (vorgabe.shape || vorgabe.length != null) ? { ...vorgabe } : null;
+    for(const n of this.nails) await this._ensureTexture(n.designId, n.finger);
+    this._invalidate();
+  }
+
+  /** Vorher/Nachher-Vergleich ein- oder ausschalten. */
+  setVergleich(an){
+    this.vergleich = an ? (this.vergleich == null ? 0.5 : this.vergleich) : null;
+    this._invalidate();
   }
 
   async refreshTextures(){
@@ -309,6 +334,12 @@ export class TryOn {
     this._invalidate();
   }
 
+  _setzeTrenner(clientX){
+    const r = this.canvas.getBoundingClientRect();
+    this.vergleich = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    this._invalidate();
+  }
+
   /** Das Foto soll nicht aus dem Bild geschoben werden koennen. */
   _clampPan(){
     const r = this.canvas.getBoundingClientRect();
@@ -356,6 +387,12 @@ export class TryOn {
       }
       if(this._pointers.size > 2) return;
 
+      if(this.vergleich != null){
+        this._vergleichZiehen = true;
+        this._setzeTrenner(e.clientX);
+        return;
+      }
+
       const p = this._toPhoto(e.clientX, e.clientY);
 
       const sel = this.selectedNail;
@@ -385,6 +422,7 @@ export class TryOn {
 
     c.addEventListener('pointermove', (e) => {
       if(this._pointers.has(e.pointerId)) this._pointers.set(e.pointerId, e);
+      if(this._vergleichZiehen && this._pointers.size < 2){ this._setzeTrenner(e.clientX); return; }
 
       if(this._pinch && this._pointers.size >= 2){
         const pts = [...this._pointers.values()];
@@ -432,6 +470,7 @@ export class TryOn {
 
     const end = (e) => {
       this._pointers.delete(e.pointerId);
+      this._vergleichZiehen = false;
       if(this._pointers.size < 2) this._pinch = null;
       this._viewDrag = null;
       if(!this._drag) return;
@@ -505,6 +544,11 @@ export class TryOn {
 
     // Naegel im Fotoraum zeichnen, dann mit derselben Abbildung einblenden
     ctx.save();
+    if(this.vergleich != null){
+      ctx.beginPath();
+      ctx.rect(this.vergleich * r.width, 0, r.width, r.height);
+      ctx.clip();
+    }
     ctx.translate(ox, oy);
     ctx.scale(scale, scale);
     for(const nail of this.nails){
@@ -514,7 +558,41 @@ export class TryOn {
     }
     ctx.restore();
 
-    this._paintHandles(ctx);
+    if(this.vergleich != null) this._paintVergleich(ctx, r);
+    else if(this.griffe) this._paintHandles(ctx);
+  }
+
+  _paintVergleich(ctx, r){
+    const x = this.vergleich * r.width;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fillRect(x - 1.25, 0, 2.5, r.height);
+    ctx.shadowColor = 'rgba(0,0,0,0.25)';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(x, r.height / 2, 20, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#BE326A';
+    ctx.beginPath();                               // zwei kleine Pfeile
+    ctx.moveTo(x - 5, r.height / 2 - 6); ctx.lineTo(x - 11, r.height / 2); ctx.lineTo(x - 5, r.height / 2 + 6);
+    ctx.moveTo(x + 5, r.height / 2 - 6); ctx.lineTo(x + 11, r.height / 2); ctx.lineTo(x + 5, r.height / 2 + 6);
+    ctx.fill();
+
+    const schild = (text, links) => {
+      ctx.font = '600 11px Inter, system-ui, sans-serif';
+      const w = ctx.measureText(text).width + 18;
+      const bx = links ? 12 : r.width - 12 - w;
+      ctx.fillStyle = 'rgba(30,20,25,0.55)';
+      ctx.beginPath();
+      if(ctx.roundRect) ctx.roundRect(bx, 12, w, 24, 12); else ctx.rect(bx, 12, w, 24);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillText(text, bx + 9, 28);
+    };
+    schild('VORHER', true);
+    schild('NACHHER', false);
+    ctx.restore();
   }
 
   _paintNail(ctx, nail, tex){
@@ -585,7 +663,8 @@ export class TryOn {
   _shapeOf(nail){
     const design = nail.designId ? this.designs.get(nail.designId) : null;
     const n = design && design.nails && design.nails[nail.finger];
-    return (n && n.shape) || null;
+    if(!n) return null;
+    return nagelMasse(n, this.vorgabe);
   }
 
   /**
@@ -593,10 +672,10 @@ export class TryOn {
    * man an einem Rahmen, der deutlich groesser ist als der sichtbare Nagel.
    */
   _frameQuad(nail){
-    const shape = this._shapeOf(nail);
+    const masse = this._shapeOf(nail);
     const q = quadOf(nail);
-    if(!shape) return q;
-    const b = shapeBounds(shape);
+    if(!masse) return q;
+    const b = shapeBounds(masse.shape, masse.length);
     const u = (x) => x / SHAPE_W, v = (y) => y / SHAPE_H;
     const at = (x, y) => {
       const top = { x: q[0].x + (q[1].x - q[0].x) * u(x), y: q[0].y + (q[1].y - q[0].y) * u(x) };

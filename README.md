@@ -1,7 +1,8 @@
 # Nagelstudio
 
-Eine Web-App zum Zeichnen, Sammeln und (später) Anprobieren von Nageldesigns.
-Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
+Eine Web-App zum Gestalten, Sammeln und Anprobieren von Nageldesigns.
+Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät. Ablauf und
+Anmutung der Anprobe orientieren sich an der App naild.
 
 ## Stand
 
@@ -20,11 +21,16 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 * Stempel: Herz, Stern, Blüte, Punkt, Schleife
 * Farbe und Größe liegen über allen Reitern und sind immer erreichbar
 * Ebenen mit Sichtbarkeit, Reihenfolge und Deckkraft
-* Acht Nagelformen (Rund, Oval, Squoval, Quadrat, Mandel, Sarg, Ballerina,
-  Stiletto) mit realistischen Silhouetten und Längenverhältnissen: Eine runde
-  Naturform endet auf dem Nagelbett, eine Ballerina- oder Stilettoform ragt
-  darüber hinaus wie eine echte Verlängerung. Muster richten sich nach der
-  Form, ein French sitzt also bei jeder Länge an der Spitze
+* Acht Nagelformen (Rund, Oval, Squoval, Eckig, Mandel, Sarg, Ballerina,
+  Stiletto) und davon getrennt die Länge, stufenlos von Kurz bis XL. Die
+  Formen werden für jede Länge neu berechnet: Eine kurze Mandel ist fast
+  oval, eine kurze Sargform hat eine breite Kante, lang laufen beide
+  deutlich zusammen. Formauswahl und Längenvorschau zeigen den Nagel auf
+  einem gezeichneten Finger. Form und Länge gelten wahlweise für alle fünf
+  Nägel
+* Muster sind lebendig: Ein French bleibt an der Spitze, wenn man Form oder
+  Länge ändert, weil die Musterebene neu gezeichnet wird statt als Pixel
+  festzustehen. Glitzer und Marmor behalten dabei ihr Aussehen
 * Rückgängig und Wiederholen (24 Schritte)
 * Notiz je Entwurf (Kundin, verwendete Lacke, Anlass), Schlagworte und
   Favoriten; die Galerie durchsucht Name, Notiz und Schlagworte
@@ -34,7 +40,10 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 
 **Fertig — Stufe 2: Anprobe**
 
-* Foto der Hand aufnehmen oder aus den Fotos wählen
+* Live-Kamera mit Haltungsprüfung: Das Handskelett wird eingeblendet, die
+  Kamera sagt, was zu tun ist („Näher ran", „Finger ausstrecken",
+  „Ruhig halten") und löst bei „Perfekt ✓" nach einem 3-2-1 selbst aus
+* Alternativ ein Foto aus der Mediathek
 * Handerkennung im Browser (MediaPipe Hand Landmarker), Bibliothek und Modell
   liegen im Projekt — kein fremdes CDN, funktioniert offline
 * Nagelflächen werden aus dem letzten Fingerglied geschätzt und anschließend
@@ -52,7 +61,11 @@ Alles läuft im Browser, alle Entwürfe bleiben auf dem Gerät.
 * Licht und Schatten der Hand scheinen durch das Design, dazu ein Glanz
   entlang der Nagelwölbung und ein Schatten auf dem Finger — ohne beides
   wirkt der Nagel wie aufgeklebt; beides lässt sich abschalten
-* Ergebnis als Bild teilen oder sichern
+* Ergebnisbildschirm mit Vorher/Nachher-Schieber
+* „Länge & Form anpassen" direkt auf der Hand: dasselbe Design als kurze
+  Mandel oder langer Sarg, ohne es neu zu gestalten
+* Ergebnis teilen, oder beim Entwurf speichern — die Anproben erscheinen in
+  der Übersicht des Entwurfs und lassen sich später wieder zeigen
 
 **Geplant**
 
@@ -108,7 +121,9 @@ zum Beispiel `npx http-server -p 8080`, und dann
 | `js/app.js` | Oberfläche: Galerie, Editor, Speichern |
 | `js/handdetect.js` | Handerkennung und daraus abgeleitete Nagelflächen |
 | `js/nailfit.js` | Nagelgröße im Foto nachmessen |
-| `js/patterns.js` | Vorlagen und Stempel |
+| `js/patterns.js` | Vorlagen und Stempel (mit festem Zufallsstartwert) |
+| `js/nailrender.js` | Realistische Vorschau: Nagel auf einem gezeichneten Finger |
+| `js/camera.js` | Live-Kamera mit Haltungsprüfung und Auto-Auslöser |
 | `js/tryon.js` | Anprobe: Foto, Nägel justieren, Designs auflegen |
 | `js/warp.js` | Ein Design auf eine Nagelfläche verzerren |
 | `js/compose.js` | Ein gespeichertes Design zu einem Bild zusammensetzen |
@@ -125,10 +140,13 @@ Dadurch lässt sich dasselbe Design auf jeden erkannten Nagel legen.
 
 Bibliothek und Modell der Erkennung werden erst beim ersten Öffnen der Anprobe
 geladen (rund 17 MB, mit Fortschrittsanzeige) und danach im Cache gehalten.
-Der erste Start der App bleibt dadurch leicht.
+Der erste Start der App bleibt dadurch leicht. App-Code dagegen lädt der
+Service Worker immer zuerst frisch aus dem Netz, damit nach einem Update
+sofort die neue Fassung erscheint.
 
 Das Raster einer Nagelform ist immer 100 × 140 Einheiten, die Nagelplatte
-nimmt davon 68 % der Breite ein und reicht je nach Form unterschiedlich weit
-nach oben. In der Anprobe wird dieses Raster an der Nagelhaut verankert —
+nimmt davon 68 % der Breite ein. Bei y = 70 liegt die Fingerkuppe, darüber
+beginnt der freie Rand; die Länge (0 bis 1) bestimmt, wie weit er reicht.
+Jede Form entsteht aus ihrer rechten Hälfte und wird gespiegelt. In der Anprobe wird dieses Raster an der Nagelhaut verankert —
 dadurch stimmen die Längen von selbst, ohne dass die Erkennung etwas über
 die gewünschte Form wissen müsste.

@@ -34,7 +34,25 @@ export const STAMPS = [
  * @param id      Vorlage aus PATTERNS
  * @param o       { color, color2, strength (0..1) }
  */
+/**
+ * Zufall mit festem Startwert. Muster werden neu gezeichnet, wenn sich Form
+ * oder Laenge aendern -- Glitzer und Marmor muessen dabei genauso aussehen
+ * wie vorher, statt jedes Mal neu gewuerfelt zu werden.
+ */
+function zufall(seed){
+  let a = (seed >>> 0) || 1;
+  return () => {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+export function neuerSeed(){ return Math.floor(Math.random() * 2147483647) + 1; }
+
 export function applyPattern(ctx, id, o){
+  const rnd = zufall(o.seed || 1);
   const color = o.color || '#D8456B';
   const color2 = o.color2 || '#FFFFFF';
   const s = Math.min(1, Math.max(0, o.strength == null ? 0.5 : o.strength));
@@ -129,14 +147,14 @@ export function applyPattern(ctx, id, o){
       // dicht an der Spitze, nach unten ausduennend
       const menge = Math.round(900 + s * 3200);
       for(let i = 0; i < menge; i++){
-        const t = Math.pow(Math.random(), 0.45);      // oben dichter
+        const t = Math.pow(rnd(), 0.45);      // oben dichter
         const y = t * IMG_H;
-        const x = Math.random() * IMG_W;
+        const x = rnd() * IMG_W;
         const wahrscheinlich = 1 - y / IMG_H;
-        if(Math.random() > wahrscheinlich * 0.9 + 0.08) continue;
-        ctx.globalAlpha = 0.35 + Math.random() * 0.65;
+        if(rnd() > wahrscheinlich * 0.9 + 0.08) continue;
+        ctx.globalAlpha = 0.35 + rnd() * 0.65;
         ctx.beginPath();
-        ctx.arc(x, y, 1 + Math.random() * (2 + s * 4), 0, Math.PI * 2);
+        ctx.arc(x, y, 1 + rnd() * (2 + s * 4), 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -154,14 +172,14 @@ export function applyPattern(ctx, id, o){
       ctx.lineCap = 'round';
       const adern = 3 + Math.round(s * 5);
       for(let i = 0; i < adern; i++){
-        ctx.globalAlpha = 0.5 + Math.random() * 0.4;
-        ctx.lineWidth = 2 + Math.random() * (4 + s * 8);
+        ctx.globalAlpha = 0.5 + rnd() * 0.4;
+        ctx.lineWidth = 2 + rnd() * (4 + s * 8);
         ctx.beginPath();
-        let x = Math.random() * IMG_W, y = -20;
+        let x = rnd() * IMG_W, y = -20;
         ctx.moveTo(x, y);
         while(y < IMG_H + 20){
-          x += (Math.random() - 0.5) * IMG_W * 0.5;
-          y += IMG_H * (0.12 + Math.random() * 0.18);
+          x += (rnd() - 0.5) * IMG_W * 0.5;
+          y += IMG_H * (0.12 + rnd() * 0.18);
           ctx.lineTo(Math.max(-40, Math.min(IMG_W + 40, x)), y);
         }
         ctx.stroke();

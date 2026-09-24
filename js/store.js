@@ -58,8 +58,27 @@ export const FINGER_NAMES = {
 /** Grundfarbe, die ein frischer Nagel hat -- ein heller Naturton. */
 export const NATURAL = '#EFD9D2';
 
-export function emptyNail(shape = 'mandel'){
-  return { shape, base: NATURAL, layers: [] };   // layers: { id, name, visible, opacity, image }
+export function emptyNail(shape = 'mandel', length = 0.36){
+  // layers: { id, name, visible, opacity, image, pattern? }
+  return { shape, length, base: NATURAL, layers: [] };
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/** Mustervorgabe einer Ebene pruefen -- sie kommt auch aus fremden Dateien. */
+function sauberesMuster(m){
+  if(!m || typeof m !== 'object' || typeof m.id !== 'string' || m.id.length > 24) return undefined;
+  return {
+    id: m.id,
+    color: HEX.test(m.color) ? m.color : '#D8456B',
+    color2: HEX.test(m.color2) ? m.color2 : '#FFFFFF',
+    strength: Number.isFinite(m.strength) ? Math.max(0, Math.min(1, m.strength)) : 0.5,
+    seed: Number.isInteger(m.seed) ? m.seed : 1
+  };
+}
+
+function laenge(v){
+  return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : undefined;
 }
 
 /**
@@ -70,7 +89,7 @@ export function emptyNail(shape = 'mandel'){
 export function emptyDesign(shape = 'mandel'){
   const now = Date.now();
   const nails = {};
-  FINGER_KEYS.forEach(k => { nails[k] = emptyNail(shape); });
+  FINGER_KEYS.forEach(k => { nails[k] = emptyNail(shape, 0.36); });
   return {
     id: newId(),
     name: '',
@@ -135,6 +154,7 @@ export async function deleteDesign(id){
   if(!d) return;
   d.deletedAt = Date.now();
   d.nails = {};
+  d.anproben = [];
   d.thumb = null;
   await putDesign(d);
 }
@@ -210,9 +230,11 @@ function structuredCloneSafe(d){
   for(const [key, nail] of Object.entries(d.nails || {})){
     nails[key] = {
       shape: nail.shape,
+      length: laenge(nail.length),
       base: nail.base,
       layers: (nail.layers || []).map(l => ({
-        id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, image: l.image
+        id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, image: l.image,
+        pattern: sauberesMuster(l.pattern)
       }))
     };
   }
@@ -223,6 +245,7 @@ function structuredCloneSafe(d){
     notiz: d.notiz || '',
     schlagworte: Array.isArray(d.schlagworte) ? d.schlagworte : [],
     favorit: !!d.favorit,
+    anproben: (d.anproben || []).slice(0, 12).map(a => ({ id: a.id, bild: a.bild, datum: a.datum })),
     thumb: d.thumb,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
@@ -242,10 +265,12 @@ export async function exportDesigns(designs){
     for(const [key, nail] of Object.entries(d.nails || {})){
       nails[key] = {
         shape: nail.shape,
+        length: laenge(nail.length),
         base: nail.base,
         layers: await Promise.all((nail.layers || []).map(async l => ({
           id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
-          image: await imageToDataUrl(l.image)
+          image: await imageToDataUrl(l.image),
+          pattern: sauberesMuster(l.pattern)
         })))
       };
     }
@@ -256,6 +281,9 @@ export async function exportDesigns(designs){
       notiz: d.notiz || '',
       schlagworte: d.schlagworte || [],
       favorit: !!d.favorit,
+      anproben: await Promise.all((d.anproben || []).map(async a => ({
+        id: a.id, datum: a.datum, bild: await imageToDataUrl(a.bild)
+      }))),
       thumb: await imageToDataUrl(d.thumb),
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
@@ -290,7 +318,8 @@ export async function mergeDesigns(payload){
       name: String(l.name || 'Ebene'),
       visible: l.visible !== false,
       opacity: Number.isFinite(l.opacity) ? l.opacity : 1,
-      image: dataUrlToBlob(l.image)
+      image: dataUrlToBlob(l.image),
+      pattern: sauberesMuster(l.pattern)
     }));
 
     const nails = {};
@@ -299,6 +328,7 @@ export async function mergeDesigns(payload){
         const n = raw.nails[k] || {};
         nails[k] = {
           shape: String(n.shape || 'mandel'),
+          length: laenge(n.length),
           base: typeof n.base === 'string' ? n.base : NATURAL,
           layers: readLayers(n.layers)
         };
@@ -321,6 +351,11 @@ export async function mergeDesigns(payload){
       notiz: String(raw.notiz || ''),
       schlagworte: Array.isArray(raw.schlagworte) ? raw.schlagworte.map(String).slice(0, 12) : [],
       favorit: !!raw.favorit,
+      anproben: Array.isArray(raw.anproben)
+        ? raw.anproben.slice(0, 12).filter(a => a && a.bild).map(a => ({
+            id: String(a.id || newId()), datum: Number(a.datum) || Date.now(), bild: dataUrlToBlob(a.bild)
+          }))
+        : [],
       thumb: dataUrlToBlob(raw.thumb),
       createdAt: Number(raw.createdAt) || Date.now(),
       updatedAt: Number(raw.updatedAt) || Date.now(),

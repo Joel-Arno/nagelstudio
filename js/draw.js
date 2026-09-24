@@ -6,9 +6,9 @@
  * man darf also ueber den Rand hinausmalen, ohne dass etwas kaputtgeht.
  */
 
-import { SHAPE_W, SHAPE_H, shapePath, shapeBounds } from './shapes.js';
+import { SHAPE_W, SHAPE_H, shapePath, shapeBounds, effectiveLength, LAENGE_STANDARD } from './shapes.js';
 import { NATURAL } from './store.js';
-import { applyPattern, drawStamp } from './patterns.js';
+import { applyPattern, drawStamp, neuerSeed, PATTERNS } from './patterns.js';
 
 export const RES = 6;                 // Skalierung des normierten Systems
 export const IMG_W = SHAPE_W * RES;   // 600
@@ -31,6 +31,7 @@ export class NailEditor {
     this.ctx = viewCanvas.getContext('2d');
 
     this.shape = 'mandel';
+    this.length = LAENGE_STANDARD;
     this.base = NATURAL;       // deckende Grundfarbe, null = ohne
     this.layers = [];          // { id, name, visible, opacity, canvas, ctx }
     this.activeLayerId = null;
@@ -139,31 +140,56 @@ export class NailEditor {
     if(!l) return;
     this._pushUndo(l, 0, 0, IMG_W, IMG_H);
     l.ctx.clearRect(0, 0, IMG_W, IMG_H);
+    delete l.pattern;
     this._invalidate('draw');
   }
 
   /**
-   * Eine Vorlage auf die aktive Ebene legen.
+   * Eine Vorlage als eigene Ebene auflegen.
    *
-   * Gezeichnet wird in den Bereich der Nagelform, nicht in das ganze
-   * Raster -- sonst saesse ein French bei einer kurzen Form oberhalb des
-   * Nagels und waere gar nicht zu sehen.
+   * Die Ebene merkt sich, welches Muster sie traegt. Aendern sich Form oder
+   * Laenge, wird sie neu gezeichnet -- ein French bleibt dadurch an der
+   * Spitze, auch wenn der Nagel laenger wird. Sobald man auf der Ebene
+   * weitermalt, wird sie zu gewoehnlichen Pixeln.
    */
   usePattern(id, options){
-    const l = this.activeLayer;
-    if(!l) return;
-    this._pushUndo(l, 0, 0, IMG_W, IMG_H);
-
-    const b = shapeBounds(this.shape);
-    l.ctx.save();
-    l.ctx.globalAlpha = this.opacity;
-    l.ctx.translate(b.x * RES, b.y * RES);
-    l.ctx.scale(b.w * RES / IMG_W, b.h * RES / IMG_H);
-    applyPattern(l.ctx, id, Object.assign({ color: this.color, color2: this.color2 }, options));
-    l.ctx.restore();
-
+    const def = PATTERNS.find(p => p.id === id);
+    const layer = this.addLayer(def ? def.name : 'Muster');
+    layer.opacity = this.opacity;
+    layer.pattern = Object.assign(
+      { id, color: this.color, color2: this.color2, strength: 0.5, seed: neuerSeed() },
+      options || {}
+    );
+    this._renderPattern(layer);
+    this.undoStack.push({ type:'layer-add', layerId: layer.id });
+    if(this.undoStack.length > UNDO_STEPS) this.undoStack.shift();
+    this.redoStack.length = 0;
+    if(this.onHistory) this.onHistory();
     this._invalidate('draw');
     this._changed('pattern');
+    return layer;
+  }
+
+  /** Musterebene in den aktuellen Formbereich zeichnen. */
+  _renderPattern(layer){
+    if(!layer.pattern) return;
+    const b = shapeBounds(this.shape, this.length);
+    const ctx = layer.ctx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, IMG_W, IMG_H);
+    ctx.translate(b.x * RES, b.y * RES);
+    ctx.scale(b.w * RES / IMG_W, b.h * RES / IMG_H);
+    applyPattern(ctx, layer.pattern.id, layer.pattern);
+    ctx.restore();
+  }
+
+  _renderAllPatterns(){
+    let any = false;
+    for(const l of this.layers){
+      if(l.pattern){ this._renderPattern(l); this._dropHistoryFor(l.id, true); any = true; }
+    }
+    return any;
   }
 
   fillLayer(id){
@@ -175,6 +201,7 @@ export class NailEditor {
     l.ctx.fillStyle = this.color;
     l.ctx.fillRect(0, 0, IMG_W, IMG_H);
     l.ctx.restore();
+    delete l.pattern;
     this._invalidate('draw');
   }
 
@@ -182,7 +209,18 @@ export class NailEditor {
 
   setShape(id){
     this.shape = id;
+    this.length = effectiveLength(id, this.length);
+    this._renderAllPatterns();
     this._invalidate('shape');
+    this._changed('shape');
+  }
+
+  /** Laenge des freien Rands, 0 (kurz) bis 1 (XL). */
+  setLength(l){
+    this.length = effectiveLength(this.shape, l);
+    this._renderAllPatterns();
+    this._invalidate('shape');
+    this._changed('length');
   }
 
   /** Grundfarbe des Nagels. null laesst den Nagel an unbemalten Stellen frei. */
@@ -351,6 +389,7 @@ export class NailEditor {
     if(w <= 0 || h <= 0) return;
 
     this._pushUndo(d.layer, x, y, w, h, this.undoBuffer);
+    delete d.layer.pattern;
 
     const ctx = d.layer.ctx;
     ctx.save();
@@ -426,21 +465,52 @@ export class NailEditor {
   undo(){
     const entry = this.undoStack.pop();
     if(!entry) return false;
+    if(entry.type === 'layer-add') return this._takeLayer(entry, this.redoStack);
+    if(entry.type === 'layer-back') return this._putLayer(entry, this.redoStack);
     return this._applyPatch(entry, this.redoStack);
   }
 
   redo(){
     const entry = this.redoStack.pop();
     if(!entry) return false;
+    if(entry.type === 'layer-add') return this._takeLayer(entry, this.undoStack);
+    if(entry.type === 'layer-back') return this._putLayer(entry, this.undoStack);
     return this._applyPatch(entry, this.undoStack);
+  }
+
+  /** Eine hinzugefuegte Ebene wieder herausnehmen (und fuer Wiederholen merken). */
+  _takeLayer(entry, intoStack){
+    const i = this.layers.findIndex(l => l.id === entry.layerId);
+    if(i < 0 || this.layers.length <= 1) return false;
+    const [layer] = this.layers.splice(i, 1);
+    if(this.activeLayerId === layer.id) this.activeLayerId = this.layers[Math.max(0, i - 1)].id;
+    intoStack.push({ type:'layer-back', layer, index: i });
+    this._invalidate('layers');
+    this._changed('undo');
+    if(this.onHistory) this.onHistory();
+    return true;
+  }
+
+  _putLayer(entry, intoStack){
+    const layer = entry.layer;
+    if(layer.pattern) this._renderPattern(layer);   // Form koennte sich geaendert haben
+    this.layers.splice(Math.min(entry.index, this.layers.length), 0, layer);
+    this.activeLayerId = layer.id;
+    intoStack.push({ type:'layer-add', layerId: layer.id });
+    this._invalidate('layers');
+    this._changed('undo');
+    if(this.onHistory) this.onHistory();
+    return true;
   }
 
   canUndo(){ return this.undoStack.length > 0; }
   canRedo(){ return this.redoStack.length > 0; }
 
-  _dropHistoryFor(layerId){
-    this.undoStack = this.undoStack.filter(e => e.layerId !== layerId);
-    this.redoStack = this.redoStack.filter(e => e.layerId !== layerId);
+  /** Pixel-Schritte einer Ebene verwerfen; mit nurPixel bleibt "Ebene hinzugefuegt". */
+  _dropHistoryFor(layerId, nurPixel){
+    const weg = (e) => e.layerId === layerId && !(nurPixel && e.type);
+    this.undoStack = this.undoStack.filter(e => !weg(e));
+    this.redoStack = this.redoStack.filter(e => !weg(e) && !(e.layer && e.layer.id === layerId && !nurPixel));
     if(this.onHistory) this.onHistory();
   }
 
@@ -482,7 +552,7 @@ export class NailEditor {
   _layout(){
     const r = this.view.getBoundingClientRect();
     const pad = 18;
-    const b = shapeBounds(this.shape);
+    const b = shapeBounds(this.shape, this.length);
     const bw = b.w * RES, bh = b.h * RES;
     const bx = b.x * RES, by = b.y * RES;
     const base = Math.min((r.width - pad * 2) / bw, (r.height - pad * 2) / bh);
@@ -577,7 +647,7 @@ export class NailEditor {
     ctx.globalCompositeOperation = 'destination-in';
     ctx.setTransform(RES, 0, 0, RES, 0, 0);
     ctx.fillStyle = '#000';
-    ctx.fill(shapePath(this.shape));
+    ctx.fill(shapePath(this.shape, this.length));
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'source-over';
     return c;
@@ -597,7 +667,7 @@ export class NailEditor {
     ctx.save();
     ctx.translate(ox, oy);
     ctx.scale(scale * RES, scale * RES);
-    const path = shapePath(this.shape);
+    const path = shapePath(this.shape, this.length);
     if(this.base){
       ctx.fillStyle = this.base;
       ctx.fill(path);
@@ -607,7 +677,7 @@ export class NailEditor {
       const step = 6;
       for(let y = 0; y < SHAPE_H; y += step){
         for(let x = 0; x < SHAPE_W; x += step){
-          ctx.fillStyle = ((x / step + y / step) % 2) ? '#4A4048' : '#372F35';
+          ctx.fillStyle = ((x / step + y / step) % 2) ? '#EFE3E8' : '#FFFFFF';
           ctx.fillRect(x, y, step, step);
         }
       }
@@ -662,6 +732,7 @@ export class NailEditor {
   /** Setzt den Editor auf einen Nagel des Satzes. Bilder sind <img>-Elemente. */
   loadDesign(nail, images){
     this.shape = (nail && nail.shape) || 'mandel';
+    this.length = effectiveLength(this.shape, nail ? nail.length : null);
     this.base = nail && 'base' in nail ? nail.base : NATURAL;
     this.layers = [];
     ((nail && nail.layers) || []).forEach((l, i) => {
@@ -674,9 +745,12 @@ export class NailEditor {
         name: l.name || 'Ebene ' + (i + 1),
         visible: l.visible !== false,
         opacity: Number.isFinite(l.opacity) ? l.opacity : 1,
+        pattern: l.pattern ? Object.assign({}, l.pattern) : undefined,
         canvas, ctx
       });
     });
+    // Musterebenen frisch zeichnen -- so passen sie sicher zu Form und Laenge
+    this.layers.forEach(l => { if(l.pattern) this._renderPattern(l); else delete l.pattern; });
     if(!this.layers.length) this.addLayer('Grundfarbe');
     this.activeLayerId = this.layers[this.layers.length - 1].id;
     this.resetHistory();
@@ -687,13 +761,15 @@ export class NailEditor {
   /** Ebenen-Metadaten plus Canvas-Referenzen zum Speichern. */
   layerData(){
     return this.layers.map(l => ({
-      id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, canvas: l.canvas
+      id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, canvas: l.canvas,
+      pattern: l.pattern ? Object.assign({}, l.pattern) : undefined
     }));
   }
 
   /** Leer heisst: keine Grundfarbe und nichts gezeichnet. */
   isEmpty(){
     if(this.base && this.base !== NATURAL) return false;
+    if(this.layers.some(l => l.pattern)) return false;
     for(const l of this.layers){
       const d = l.ctx.getImageData(0, 0, IMG_W, IMG_H).data;
       for(let i = 3; i < d.length; i += 4){ if(d[i] !== 0) return false; }

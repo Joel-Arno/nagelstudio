@@ -3,19 +3,34 @@
  * Wird von der Anprobe gebraucht -- der Editor macht dasselbe live in draw.js.
  */
 
-import { shapePath } from './shapes.js';
+import { shapePath, shapeBounds, effectiveLength } from './shapes.js';
 import { RES, IMG_W, IMG_H } from './draw.js';
 import { imageToUrl, releaseUrl, loadImage } from './store.js';
+import { applyPattern } from './patterns.js';
 
-const cache = new Map();   // designId:finger -> { canvas, updatedAt }
+const cache = new Map();   // Entwurf:Finger:Form:Laenge -> { canvas, updatedAt }
 
-/** Fertiges Bild eines einzelnen Nagels aus dem Satz. */
-export async function designTexture(design, fingerKey = 'zeigefinger'){
-  const key = design.id + ':' + fingerKey;
+/** Form und Laenge, die fuer einen Nagel gelten -- mit optionaler Vorgabe von aussen. */
+export function nagelMasse(nail, override){
+  const shape = (override && override.shape) || (nail && nail.shape) || 'mandel';
+  const roh = override && override.length != null ? override.length : (nail ? nail.length : null);
+  return { shape, length: effectiveLength(shape, roh) };
+}
+
+/**
+ * Fertiges Bild eines einzelnen Nagels aus dem Satz.
+ *
+ * Mit override lassen sich Form und Laenge abweichend vom gespeicherten
+ * Entwurf rechnen -- so probiert man in der Anprobe dasselbe Design als
+ * kurze Mandel oder langen Sarg, ohne es neu zu zeichnen. Musterebenen
+ * werden dafuer neu gezeichnet, gemalte Ebenen folgen der neuen Form.
+ */
+export async function designTexture(design, fingerKey = 'zeigefinger', override){
+  const nail = (design.nails && (design.nails[fingerKey] || design.nails.zeigefinger)) || {};
+  const { shape, length } = nagelMasse(nail, override);
+  const key = design.id + ':' + fingerKey + ':' + shape + ':' + Math.round(length * 100);
   const hit = cache.get(key);
   if(hit && hit.updatedAt === design.updatedAt) return hit.canvas;
-
-  const nail = (design.nails && (design.nails[fingerKey] || design.nails.zeigefinger)) || {};
 
   const canvas = document.createElement('canvas');
   canvas.width = IMG_W;
@@ -27,13 +42,28 @@ export async function designTexture(design, fingerKey = 'zeigefinger'){
     ctx.fillRect(0, 0, IMG_W, IMG_H);
   }
 
+  const b = shapeBounds(shape, length);
   for(const layer of nail.layers || []){
     if(layer.visible === false || layer.opacity === 0) continue;
+    const alpha = Number.isFinite(layer.opacity) ? layer.opacity : 1;
+
+    if(layer.pattern){
+      const tmp = document.createElement('canvas');
+      tmp.width = IMG_W; tmp.height = IMG_H;
+      const t = tmp.getContext('2d');
+      t.translate(b.x * RES, b.y * RES);
+      t.scale(b.w * RES / IMG_W, b.h * RES / IMG_H);
+      applyPattern(t, layer.pattern.id, layer.pattern);
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(tmp, 0, 0);
+      continue;
+    }
+
     const url = imageToUrl(layer.image);
     if(!url) continue;
     try{
       const img = await loadImage(url);
-      ctx.globalAlpha = Number.isFinite(layer.opacity) ? layer.opacity : 1;
+      ctx.globalAlpha = alpha;
       ctx.drawImage(img, 0, 0, IMG_W, IMG_H);
     }catch(e){ /* eine kaputte Ebene darf den Rest nicht verhindern */ }
     finally{ releaseUrl(url); }
@@ -44,11 +74,12 @@ export async function designTexture(design, fingerKey = 'zeigefinger'){
   ctx.globalCompositeOperation = 'destination-in';
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   ctx.fillStyle = '#000';
-  ctx.fill(shapePath(nail.shape || 'mandel'));
+  ctx.fill(shapePath(shape, length));
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'source-over';
 
   cache.set(key, { canvas, updatedAt: design.updatedAt });
+  if(cache.size > 120) cache.delete(cache.keys().next().value);
   return canvas;
 }
 

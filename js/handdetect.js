@@ -25,6 +25,79 @@ export const FINGERS = [
 
 let landmarker = null;
 let loading = null;
+let modusJetzt = 'IMAGE';
+
+/** Linien des Handskeletts (Paare von Gelenkpunkten). */
+export const HAND_VERBINDUNGEN = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+export const FINGERSPITZEN = [4, 8, 12, 16, 20];
+
+/**
+ * Zwischen Einzelbild (Foto) und Videostrom (Live-Kamera) umschalten.
+ * Live genuegt eine Hand, das haelt die Bildrate hoch.
+ */
+async function modus(m){
+  const det = await loadDetector();
+  if(modusJetzt !== m){
+    await det.setOptions({ runningMode: m, numHands: m === 'VIDEO' ? 1 : 2 });
+    modusJetzt = m;
+  }
+  return det;
+}
+
+export async function startLive(onStatus){
+  await loadDetector(onStatus);
+  await modus('VIDEO');
+}
+
+/** Ein Videobild auswerten. Zeitstempel muessen wachsen. */
+export function erkenneLive(video, zeitMs){
+  if(!landmarker || modusJetzt !== 'VIDEO') return null;
+  return landmarker.detectForVideo(video, zeitMs);
+}
+
+const abstand = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/**
+ * Taugt diese Handhaltung fuer ein gutes Anprobe-Foto?
+ *
+ * Geprueft wird, was sich aus den Gelenkpunkten sicher ablesen laesst: ist
+ * die ganze Hand im Bild, gross genug, sind die Finger ausgestreckt. Ob man
+ * Handruecken oder Handflaeche sieht, geben die Punkte nicht verlaesslich
+ * her -- das steht deshalb als Hinweis im Sucher, nicht als Pruefung.
+ */
+export function bewerteHand(lm, w, h){
+  if(!lm || lm.length < 21) return { ok:false, code:'keine', hinweis:'Hand ins Bild halten' };
+
+  const rand = 0.025;
+  for(const i of FINGERSPITZEN){
+    const p = lm[i];
+    if(p.x < rand || p.x > 1 - rand || p.y < rand || p.y > 1 - rand){
+      return { ok:false, code:'rand', hinweis:'Ganze Hand ins Bild' };
+    }
+  }
+
+  const P = lm.map(p => ({ x: p.x * w, y: p.y * h }));
+  const xs = P.map(p => p.x), ys = P.map(p => p.y);
+  const groesse = Math.max((Math.max(...xs) - Math.min(...xs)) / w, (Math.max(...ys) - Math.min(...ys)) / h);
+  if(groesse < 0.40) return { ok:false, code:'klein', hinweis:'Näher ran' };
+  if(groesse > 0.97) return { ok:false, code:'gross', hinweis:'Etwas weiter weg' };
+
+  // Finger ausgestreckt? Gerader Abstand im Verhaeltnis zur Gliedlaenge.
+  for(const [a, b, c, d] of [[5,6,7,8], [9,10,11,12], [13,14,15,16], [17,18,19,20]]){
+    const glied = abstand(P[a], P[b]) + abstand(P[b], P[c]) + abstand(P[c], P[d]);
+    if(glied > 0 && abstand(P[a], P[d]) / glied < 0.78){
+      return { ok:false, code:'gebeugt', hinweis:'Finger ausstrecken' };
+    }
+  }
+  return { ok:true, code:'perfekt', hinweis:'Perfekt' };
+}
 
 /** Laedt Bibliothek und Modell. Mehrfache Aufrufe teilen sich den Ladevorgang. */
 export function loadDetector(onStatus){
@@ -129,7 +202,7 @@ export function nailQuad(landmarks, finger, width, height){
 
 /** Erkennt Haende in einem Bild und liefert fertige Nagelflaechen. */
 export async function detectNails(image, width, height){
-  const det = await loadDetector();
+  const det = await modus('IMAGE');
   const res = det.detect(image);
   const hands = [];
 

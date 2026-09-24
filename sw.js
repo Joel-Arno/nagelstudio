@@ -1,11 +1,12 @@
-/* Offline-Betrieb: Die App-Dateien liegen im Cache, damit das Studio auch
-   ohne Netz startet. Entwuerfe liegen ohnehin lokal in IndexedDB.
+/* Offline-Betrieb.
 
-   Bibliothek und Modell der Handerkennung (rund 17 MB) stehen bewusst NICHT
-   in dieser Liste: sie werden erst beim ersten Oeffnen der Anprobe geladen
-   und danach im selben Cache abgelegt. So bleibt der erste Start leicht. */
+   App-Code kommt zuerst aus dem Netz und nur ohne Verbindung aus dem
+   Zwischenspeicher -- sonst saehe man nach jedem Update beim ersten Oeffnen
+   noch die alte Fassung. Die grossen, unveraenderlichen Dateien der
+   Handerkennung (rund 17 MB) kommen dagegen aus dem Speicher; sie werden
+   erst beim ersten Oeffnen der Anprobe geladen und nicht vorab. */
 
-const CACHE = 'nagelstudio-v1';
+const CACHE = 'nagelstudio-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -18,15 +19,20 @@ const ASSETS = [
   './js/handdetect.js',
   './js/compose.js',
   './js/warp.js',
+  './js/nailfit.js',
+  './js/patterns.js',
+  './js/nailrender.js',
+  './js/camera.js',
   './manifest.webmanifest',
   './icon.png',
   './icon-512.png'
 ];
+const GROSS = /\/(vendor|models)\//;
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => Promise.allSettled(ASSETS.map(a => c.add(a))))
+      .then(c => Promise.allSettled(ASSETS.map(a => c.add(new Request(a, { cache: 'no-cache' })))))
       .then(() => self.skipWaiting())
   );
 });
@@ -39,23 +45,30 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+async function ablegen(req, res){
+  if(res && res.ok){
+    const c = await caches.open(CACHE);
+    await c.put(req, res.clone()).catch(() => {});
+  }
+  return res;
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if(req.method !== 'GET') return;
-
   const url = new URL(req.url);
   if(url.origin !== location.origin) return;   // Schriften o. Ae. nicht abfangen
 
+  if(GROSS.test(url.pathname)){
+    // Erkennung: aus dem Speicher, sonst laden und ablegen
+    e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => ablegen(req, res))));
+    return;
+  }
+
+  // App-Code: frisch aus dem Netz, ohne Netz aus dem Speicher
   e.respondWith(
-    caches.match(req).then(hit => {
-      const net = fetch(req).then(res => {
-        if(res && res.ok){
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
-        }
-        return res;
-      }).catch(() => hit);
-      return hit || net;
-    })
+    fetch(req, { cache: 'no-cache' })
+      .then(res => ablegen(req, res))
+      .catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
   );
 });
