@@ -218,6 +218,7 @@ export class Entnahme extends TryOn {
         ctx.stroke();
       }
     }
+    this._paintPuls(ctx);
   }
 
   /** Umriss der Form auf dem Bildschirm. */

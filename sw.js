@@ -6,7 +6,7 @@
    Handerkennung (rund 17 MB) kommen dagegen aus dem Speicher; sie werden
    erst beim ersten Oeffnen der Anprobe geladen und nicht vorab. */
 
-const CACHE = 'nagelstudio-v4';
+const CACHE = 'nagelstudio-v5';
 const ASSETS = [
   './',
   './index.html',

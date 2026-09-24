@@ -247,7 +247,7 @@
 
   <!-- Ergebnis -->
   <div class="tryon-bar" id="tryonBar" hidden>
-    <p class="wisch-hinweis" id="wischHinweis">Wisch über das Bild für den Vorher-/Nachher-Vergleich</p>
+    <p class="wisch-hinweis" id="wischHinweis">Wisch für Vorher/Nachher · sitzt ein Nagel daneben: lange auf den echten Nagel drücken</p>
     <div class="design-strip" id="designStrip"></div>
 
     <div class="ergebnis-knoepfe" id="ergebnisKnoepfe">
@@ -305,6 +305,11 @@
           <button class="nudge" data-nudge="forward" type="button" aria-label="Richtung Fingerspitze">⇡</button>
           <span class="nudge-label">Sitz</span>
         </span>
+        <span class="nudge-group" role="group" aria-label="Um die Fingerachse drehen">
+          <button class="nudge" data-nudge="rollleft" type="button" aria-label="zur einen Seite kippen">◐</button>
+          <button class="nudge" data-nudge="rollright" type="button" aria-label="zur anderen Seite kippen">◑</button>
+          <span class="nudge-label">Seite</span>
+        </span>
       </div>
       <div class="tryon-actions">
         <button class="btn ghost" id="btnNailHide" type="button">Ausblenden</button>
@@ -325,7 +330,7 @@
     <button class="icon-btn" id="btnEntnahmeBack" type="button" aria-label="Zurück">‹</button>
     <div class="titel-block">
       <h2 class="logo" id="entnahmeTitel">Aus Foto übernehmen</h2>
-      <p class="unterzeile" id="entnahmeUnterzeile">Rahmen auf die Nägel ziehen – was drin liegt, wird übernommen</p>
+      <p class="unterzeile" id="entnahmeUnterzeile">Tipp mitten auf einen Nagel im Foto – der Rahmen springt dorthin</p>
     </div>
     <div class="bar-actions">
       <button class="btn ghost" id="btnEntnahmeNeu" type="button">Anderes Foto</button>
@@ -373,6 +378,11 @@
         <button class="nudge" data-enudge="backward" type="button" aria-label="Richtung Gelenk">⇣</button>
         <button class="nudge" data-enudge="forward" type="button" aria-label="Richtung Fingerspitze">⇡</button>
         <span class="nudge-label">Sitz</span>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Um die Fingerachse drehen">
+        <button class="nudge" data-enudge="rollleft" type="button" aria-label="zur einen Seite kippen">◐</button>
+        <button class="nudge" data-enudge="rollright" type="button" aria-label="zur anderen Seite kippen">◑</button>
+        <span class="nudge-label">Seite</span>
       </span>
     </div>
     <div class="tryon-actions">

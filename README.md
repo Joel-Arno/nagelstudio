@@ -66,6 +66,12 @@ Anmutung der Anprobe orientieren sich an der App naild.
   Mandel oder langer Sarg, ohne es neu zu gestalten
 * Ergebnis teilen, oder beim Entwurf speichern — die Anproben erscheinen in
   der Übersicht des Entwurfs und lassen sich später wieder zeigen
+* Sitzt ein Nagel daneben: lange auf den echten Nagel im Foto drücken (beim
+  Nachjustieren reicht ein Tipp) — der Nagel dieses Fingers springt dorthin
+  und wird an der Stelle neu vermessen
+* Daumen von der Seite: wirkt der Daumen kaum breiter als der Zeigefinger,
+  sieht man ihn seitlich — sein Nagel wird dann schmaler und zur Außenseite
+  versetzt gezeichnet. Von Hand nachstellbar mit „Seite ◐ ◑"
 * **Aus Foto übernehmen**: ein Foto gemachter Nägel hochladen, die App setzt
   pro Finger einen Rahmen in der gewählten Nagelform, und was darin liegt,
   wird entzerrt zum Entwurf — danach weiter bemalbar und anprobierbar.

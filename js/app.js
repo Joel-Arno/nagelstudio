@@ -807,7 +807,7 @@ function setTryonModus(modus){
   $('tryonUnterzeile').textContent =
     modus === 'ergebnis' ? 'So sieht es an deiner Hand aus' :
     modus === 'anpassen' ? 'Dasselbe Design in anderer Form oder Länge' :
-    modus === 'justage'  ? 'Nagel antippen und ziehen, oder mit den Knöpfen verschieben' :
+    modus === 'justage'  ? 'Tipp mitten auf einen echten Nagel – der Nagel springt dorthin' :
                            'Probier deine Entwürfe an deiner Hand';
   if(tryon){
     tryon.griffe = modus === 'justage';
@@ -1086,8 +1086,8 @@ async function entnahmeFoto(file){
 
   $('entnahmeTitel').textContent = nagel ? 'Nagel aus Foto' : 'Aus Foto übernehmen';
   $('entnahmeUnterzeile').textContent = nagel
-    ? 'Rahmen auf den Nagel ziehen – er kommt als neue Ebene auf ' + FINGER_NAMES[entnahmeZiel.finger]
-    : 'Rahmen auf die Nägel ziehen – was drin liegt, wird übernommen';
+    ? 'Tipp mitten auf den Nagel im Foto – er kommt als Ebene auf ' + FINGER_NAMES[entnahmeZiel.finger]
+    : 'Tipp mitten auf einen Nagel im Foto – der Rahmen springt dorthin';
   $('entnahmeFormBox').hidden = nagel;
   $('entnahmeEinerZeile').hidden = nagel;
   $('btnEntnahmeUebernehmen').hidden = nagel;
@@ -1560,7 +1560,8 @@ function wire(){
     left:['left',0], right:['right',0], up:['up',0], down:['down',0],
     bigger:['grow',0.06], smaller:['grow',-0.06],
     wider:['wider',0.06], narrower:['wider',-0.06],
-    turnleft:['turn',-0.05], turnright:['turn',0.05]
+    turnleft:['turn',-0.05], turnright:['turn',0.05],
+    rollleft:['roll',-0.15], rollright:['roll',0.15]
   };
   let scopeAll = false;
   $('btnScope').addEventListener('click', (e) => {

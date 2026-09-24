@@ -10,7 +10,7 @@
 import { detectNails, loadDetector, FINGERS } from './handdetect.js';
 import { drawQuad, quadContains, quadBounds } from './warp.js';
 import { designTexture, nagelMasse } from './compose.js';
-import { shapeBounds, SHAPE_W, SHAPE_H } from './shapes.js';
+import { shapeBounds, SHAPE_W, SHAPE_H, KUPPE } from './shapes.js';
 import { refineNail } from './nailfit.js';
 import { PLATE_W, RASTER_RATIO } from './shapes.js';
 
@@ -22,6 +22,23 @@ const HANDLE_OFF = 17;    // Abstand der Griffe vom Nagelrand
 // daher wird die Verschiebung ueber die gemessene Nagelbreite geschaetzt.
 const VERSATZ_MM = 3;
 const NAGELBREITE_MM = 11;
+
+// Antippen: der Punkt, den man auf dem echten Nagel trifft, ist die Mitte
+// der Nagelplatte -- im Raster liegt sie zwischen Nagelhaut (140) und
+// Fingerkuppe (70), etwas zur Nagelhaut hin.
+const PLATTE_MITTE = 102;
+const LANG_DRUECKEN = 450;     // ms
+
+// Daumen von der Seite: von vorne ist der Daumen rund 1,2-mal so breit wie
+// der Zeigefinger, von der Seite sieht man nur seine Dicke -- dann ist er
+// kaum breiter oder sogar schmaler. Aus diesem Verhaeltnis wird geschaetzt,
+// wie weit der Nagel zur Seite gedreht ist. Die Breitenmessung schwankt
+// um gut 10 %, deshalb greift das erst, wenn der Daumen hoechstens so breit
+// wie der Zeigefinger wirkt -- gerade gesehene Daumen bleiben unberuehrt.
+const DAUMEN_VORNE = 1.04;
+const DAUMEN_SEITE = 0.88;
+const DAUMEN_MAX_DREHUNG = 65 * Math.PI / 180;
+const TIPP_WEG = 8;            // px, mehr ist Ziehen
 
 export class TryOn {
   constructor(canvas){
@@ -133,20 +150,25 @@ export class TryOn {
     const nails = [];
     hands.forEach((hand, hi) => {
       const handName = hands.length < 2 ? '' : (hi === 0 ? 'links im Bild' : 'rechts im Bild');
+      const breiten = {};
+      const start = nails.length;
       hand.nails.forEach(n => {
         // Schaetzung aus den Gelenken, danach im Bild nachgemessen
         const grob = boxFromQuad(n.quad);
         const fein = refineNail(this.photo, grob);
+        if(fein.fingerBreite) breiten[n.finger] = fein.fingerBreite;
         const versatz = fein.w * VERSATZ_MM / NAGELBREITE_MM;
         fein.cx += Math.cos(fein.angle) * versatz;
         fein.cy += Math.sin(fein.angle) * versatz;
         nails.push(Object.assign(
           { id: 'n' + hi + '-' + n.finger, hand: hi, handName, name: n.name,
-            finger: n.finger, visible: true, designId: null,
+            finger: n.finger, visible: true, designId: null, roll: 0, aussen: n.aussen || 0,
             confidence: fein.confidence, source: fein.source },
           plateToRaster(fein)
         ));
       });
+      const daumen = nails.slice(start).find(n => n.finger === 'daumen');
+      if(daumen) daumen.roll = daumenDrehung(breiten, daumen.aussen);
     });
     this.nails = nails;
     this.selected = nails.length ? nails[0].id : null;
@@ -279,6 +301,7 @@ export class TryOn {
       if(what === 'grow'){  n.w *= (1 + amount); n.h *= (1 + amount); }
       if(what === 'wider')  n.w *= (1 + amount);
       if(what === 'turn')   n.angle += amount;
+      if(what === 'roll')   n.roll = Math.max(-MAX_ROLL, Math.min(MAX_ROLL, (n.roll || 0) + amount));
       n.w = Math.max(5, n.w);
       n.h = Math.max(6, n.h);
     }
@@ -300,6 +323,51 @@ export class TryOn {
     }
     this._invalidate();
     if(this.onChange) this.onChange('adjust');
+  }
+
+  /**
+   * Auf einen echten Nagel tippen: der Nagel dieses Fingers springt dorthin.
+   * Welcher Finger gemeint ist, entscheidet der Abstand zur Fingerachse --
+   * die Erkennung liegt eher entlang des Fingers daneben als quer dazu.
+   */
+  setzeAuf(p){
+    const kandidaten = this.nails.filter(n => n.visible);
+    if(!kandidaten.length) return null;
+    let bester = null, abstand = Infinity;
+    for(const n of kandidaten){
+      const m = mitteVon(n);
+      const ux = Math.cos(n.angle), uy = Math.sin(n.angle);
+      const dx = p.x - m.x, dy = p.y - m.y;
+      const entlang = dx * ux + dy * uy;
+      const quer = -dx * uy + dy * ux;
+      const d = Math.abs(quer) + Math.abs(entlang) * 0.35;
+      if(d < abstand){ abstand = d; bester = n; }
+    }
+    const n = bester;
+
+    // Breite an der neuen Stelle nachmessen
+    const fein = refineNail(this.photo, {
+      cx: p.x, cy: p.y, angle: n.angle,
+      w: n.w * PLATE_W, h: n.h * (SHAPE_H - KUPPE) / SHAPE_H
+    });
+    if(fein.source !== 'schaetzung'){
+      n.w = fein.w / PLATE_W;
+      n.h = n.w * RASTER_RATIO;
+    }
+
+    // Rastermitte so legen, dass die Plattenmitte auf dem Tipp liegt
+    const ux = Math.cos(n.angle), uy = Math.sin(n.angle);
+    const zurueck = n.h * (PLATTE_MITTE - SHAPE_H / 2) / SHAPE_H;
+    const v = rollVersatz(n);
+    n.cx = p.x + ux * zurueck - v.x;
+    n.cy = p.y + uy * zurueck - v.y;
+    n.visible = true;
+
+    this.selected = n.id;
+    this._puls = { x: p.x, y: p.y, t: performance.now() };
+    this._invalidate();
+    if(this.onChange) this.onChange('setzen');
+    return n;
   }
 
   setOpacity(v){ this.opacity = v; this._invalidate(); }
@@ -383,6 +451,15 @@ export class TryOn {
       c.setPointerCapture(e.pointerId);
       this._pointers.set(e.pointerId, e);
 
+      // Tippen und lange Druecken erkennen
+      clearTimeout(this._langTimer);
+      this._tipp = this._pointers.size === 1
+        ? { x: e.clientX, y: e.clientY, t: performance.now(), vergleich: this.vergleich, bewegt: false }
+        : null;
+      if(this._tipp){
+        this._langTimer = setTimeout(() => this._langGedrueckt(), LANG_DRUECKEN);
+      }
+
       if(this._pointers.size === 2){
         this._drag = null;
         this._viewDrag = null;
@@ -431,6 +508,11 @@ export class TryOn {
 
     c.addEventListener('pointermove', (e) => {
       if(this._pointers.has(e.pointerId)) this._pointers.set(e.pointerId, e);
+      if(this._tipp && !this._tipp.bewegt
+         && Math.hypot(e.clientX - this._tipp.x, e.clientY - this._tipp.y) > TIPP_WEG){
+        this._tipp.bewegt = true;
+        clearTimeout(this._langTimer);
+      }
       if(this._vergleichZiehen && this._pointers.size < 2){ this._setzeTrenner(e.clientX); return; }
 
       if(this._pinch && this._pointers.size >= 2){
@@ -466,18 +548,40 @@ export class TryOn {
         n.cy = d.cy0 + (p.y - d.start.y);
       }else if(d.mode === 'tip'){
         // Drehen und Laenge zugleich: der Griff sitzt vor der Nagelspitze
-        const dx = p.x - n.cx, dy = p.y - n.cy;
+        const m = mitteVon(n);
+        const dx = p.x - m.x, dy = p.y - m.y;
         n.angle = Math.atan2(dy, dx);
         n.h = Math.max(6, (Math.hypot(dx, dy) - this._offsetInPhoto()) / this._rahmenAnteil(n).spitze);
       }else if(d.mode === 'side'){
-        const dx = p.x - n.cx, dy = p.y - n.cy;
+        const m = mitteVon(n);
+        const dx = p.x - m.x, dy = p.y - m.y;
         const across = Math.abs(dx * Math.cos(n.angle + Math.PI / 2) + dy * Math.sin(n.angle + Math.PI / 2));
-        n.w = Math.max(5, (across - this._offsetInPhoto()) / this._rahmenAnteil(n).seite);
+        n.w = Math.max(5, (across - this._offsetInPhoto()) / this._rahmenAnteil(n).seite / Math.cos(n.roll || 0));
       }
       this._invalidate();
     });
 
     const end = (e) => {
+      clearTimeout(this._langTimer);
+      const tipp = this._tipp;
+      this._tipp = null;
+      // Kurzer Tipp neben die Naegel beim Justieren: dorthin setzen
+      if(tipp && !tipp.bewegt && !tipp.erledigt && this._viewDrag && this.griffe && e.type === 'pointerup'
+         && performance.now() - tipp.t < LANG_DRUECKEN){
+        this._pointers.delete(e.pointerId);
+        this._viewDrag = null;
+        this.setzeAuf(this._toPhoto(tipp.x, tipp.y));
+        return;
+      }
+      if(tipp && tipp.erledigt){
+        this._pointers.delete(e.pointerId);
+        this._viewDrag = null;
+        this._drag = null;
+        this._draft = false;
+        this._vergleichZiehen = false;
+        this._invalidate();
+        return;
+      }
       this._pointers.delete(e.pointerId);
       this._vergleichZiehen = false;
       if(this._pointers.size < 2) this._pinch = null;
@@ -498,11 +602,29 @@ export class TryOn {
     }, { passive:false });
   }
 
+  /** Lange auf das Foto gedrueckt: den passenden Nagel dorthin setzen. */
+  _langGedrueckt(){
+    const tipp = this._tipp;
+    if(!tipp || tipp.bewegt || this._pointers.size !== 1) return;
+    tipp.erledigt = true;
+    // was der Druck bis hierhin ausgeloest hat, zuruecknehmen
+    if(this._drag && this._drag.mode === 'move'){
+      this._drag.nail.cx = this._drag.cx0;
+      this._drag.nail.cy = this._drag.cy0;
+    }
+    this._drag = null;
+    this._viewDrag = null;
+    this._vergleichZiehen = false;
+    this.vergleich = tipp.vergleich;
+    if(navigator.vibrate) navigator.vibrate(12);
+    this.setzeAuf(this._toPhoto(tipp.x, tipp.y));
+  }
+
   _handlePoints(nail){
     const q = this._frameQuad(nail);
     const tip = this._toScreen({ x:(q[0].x + q[1].x) / 2, y:(q[0].y + q[1].y) / 2 });
     const side = this._toScreen({ x:(q[1].x + q[2].x) / 2, y:(q[1].y + q[2].y) / 2 });
-    const c = this._toScreen({ x: nail.cx, y: nail.cy });
+    const c = this._toScreen(mitteVon(nail));
     // ein Stueck nach aussen schieben, sonst liegen die Griffe auf dem Nagel
     const push = (p) => {
       const dx = p.x - c.x, dy = p.y - c.y;
@@ -569,6 +691,24 @@ export class TryOn {
 
     if(this.vergleich != null) this._paintVergleich(ctx, r);
     else if(this.griffe) this._paintHandles(ctx);
+    this._paintPuls(ctx);
+  }
+
+  /** Kurzer Ring an der Stelle, auf die ein Nagel gesetzt wurde. */
+  _paintPuls(ctx){
+    if(!this._puls) return;
+    const alter = (performance.now() - this._puls.t) / 650;
+    if(alter >= 1){ this._puls = null; return; }
+    const p = this._toScreen(this._puls);
+    ctx.save();
+    ctx.globalAlpha = 1 - alter;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#E0567C';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 10 + alter * 26, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    this._invalidate();
   }
 
   _paintVergleich(ctx, r){
@@ -761,6 +901,15 @@ export class TryOn {
 
 /* ---------------- Geometrie ---------------- */
 
+/** Drehung des Daumennagels aus dem Breitenverhaeltnis Daumen/Zeigefinger. */
+export function daumenDrehung(breiten, seite){
+  const vergleich = breiten.zeigefinger || breiten.mittelfinger;
+  if(!seite || !breiten.daumen || !vergleich) return 0;
+  const verhaeltnis = breiten.daumen / vergleich;
+  const t = Math.max(0, Math.min(1, (DAUMEN_VORNE - verhaeltnis) / (DAUMEN_VORNE - DAUMEN_SEITE)));
+  return seite * t * DAUMEN_MAX_DREHUNG;
+}
+
 /**
  * Aus der gemessenen Nagelplatte das Raster machen, auf das ein Design
  * gelegt wird.
@@ -788,17 +937,40 @@ export function plateToRaster(plate){
   };
 }
 
+/**
+ * Ist ein Nagel um die Fingerachse gedreht (roll, etwa der Daumen von der
+ * Seite), sieht man ihn schmaler und zur gedrehten Seite hin versetzt --
+ * er liegt ja auf der Rundung des Fingers.
+ */
+export const MAX_ROLL = 1.2;
+const FINGER_RADIUS = 0.62;     // Fingerradius im Verhaeltnis zur Nagelbreite
+
+export function rollVersatz(n){
+  const roll = n.roll || 0;
+  if(!roll) return { x: 0, y: 0 };
+  const s = Math.sin(roll) * n.w * PLATE_W * FINGER_RADIUS;
+  return { x: -Math.sin(n.angle) * s, y: Math.cos(n.angle) * s };
+}
+
+/** Sichtbare Mitte des Rasters. */
+export function mitteVon(n){
+  const v = rollVersatz(n);
+  return { x: n.cx + v.x, y: n.cy + v.y };
+}
+
 /** Viereck [Spitze-links, Spitze-rechts, Basis-rechts, Basis-links]. */
 export function quadOf(n){
   const ux = Math.cos(n.angle), uy = Math.sin(n.angle);       // Richtung zur Spitze
   const nx = -uy, ny = ux;                                    // quer dazu
+  const breite = n.w * Math.cos(n.roll || 0);
+  const m = mitteVon(n);
   const hx = ux * n.h / 2, hy = uy * n.h / 2;
-  const wx = nx * n.w / 2, wy = ny * n.w / 2;
+  const wx = nx * breite / 2, wy = ny * breite / 2;
   return [
-    { x: n.cx + hx - wx, y: n.cy + hy - wy },
-    { x: n.cx + hx + wx, y: n.cy + hy + wy },
-    { x: n.cx - hx + wx, y: n.cy - hy + wy },
-    { x: n.cx - hx - wx, y: n.cy - hy - wy }
+    { x: m.x + hx - wx, y: m.y + hy - wy },
+    { x: m.x + hx + wx, y: m.y + hy + wy },
+    { x: m.x - hx + wx, y: m.y - hy + wy },
+    { x: m.x - hx - wx, y: m.y - hy - wy }
   ];
 }
 

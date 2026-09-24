@@ -200,6 +200,25 @@ export function nailQuad(landmarks, finger, width, height){
   ];
 }
 
+/* ---------- Drehung um die Fingerachse ---------- */
+
+/**
+ * Auf welcher Seite des Daumens ein seitlich gesehener Nagel liegt:
+ * +1 = zur Querrichtung (-u.y, u.x) hin, -1 = zur anderen. Das ist die
+ * Aussenseite, weg vom Zeigefinger -- liegt der Daumen locker neben der
+ * Hand, zeigt sein Nagel dorthin.
+ */
+export function daumenAussenseite(lm, width, height){
+  if(![3, 4, 5].every(i => lm[i])) return 0;
+  const P = (i) => ({ x: lm[i].x * width, y: lm[i].y * height });
+  const ip = P(3), spitze = P(4), zeigeGrund = P(5);
+  const u = vec(ip, spitze), lu = len(u);
+  if(lu < 2) return 0;
+  const quer = { x: -u.y / lu, y: u.x / lu };
+  const weg = vec(zeigeGrund, ip);
+  return weg.x * quer.x + weg.y * quer.y >= 0 ? 1 : -1;
+}
+
 /** Erkennt Haende in einem Bild und liefert fertige Nagelflaechen. */
 export async function detectNails(image, width, height){
   const det = await modus('IMAGE');
@@ -219,7 +238,10 @@ export async function detectNails(image, width, height){
       landmarks,
       nails: FINGERS.map(f => {
         const quad = nailQuad(landmarks, f, width, height);
-        return quad ? { finger: f.key, name: f.name, quad, visible: true, designId: null } : null;
+        return quad ? {
+          finger: f.key, name: f.name, quad, visible: true, designId: null,
+          aussen: f.key === 'daumen' ? daumenAussenseite(landmarks, width, height) : 0
+        } : null;
       }).filter(Boolean)
     });
   });

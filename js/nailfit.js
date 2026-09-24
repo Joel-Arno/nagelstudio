@@ -152,7 +152,8 @@ export function refineNail(photo, box){
       w: nailW,
       h: box.h * Math.min(1.25, Math.max(0.85, faktor)),
       confidence: 0.7,
-      source: 'fingerbreite'
+      source: 'fingerbreite',
+      fingerBreite: fingerW
     };
   }catch(e){
     // Bildanalyse darf die Anprobe nie verhindern
